@@ -5,21 +5,26 @@ use chrono::NaiveDateTime;
 use futures::Future;
 use log::debug;
 
-use crate::{cfg::{Config, ICalWatchItem}, calendar::store::CalendarEvent};
+use crate::{
+    calendar::store::CalendarEvent,
+    cfg::{Config, ICalWatchItem},
+};
 
-use self::store::Calendar;
+use self::store::{Calendar, Store};
 pub mod store;
 
 pub struct CalendarWatcher<'a> {
     config: Arc<Config>,
-    hashmap: HashMap<String, Calendar<'a>>,
+    store: Store<'a>,
 }
 
 impl CalendarWatcher<'_> {
     pub fn new(config: Arc<Config>) -> Self {
         CalendarWatcher {
             config,
-            hashmap: HashMap::new(),
+            store: Store {
+                calendars: HashMap::new(),
+            },
         }
     }
 

@@ -15,14 +15,14 @@ mod calendar;
 fn load_config() -> Result<cfg::Config, ConfigError> {
     let settings = Config::builder()
         .add_source(File::with_name("config"))
-        .add_source(Environment::with_prefix("TIMOTHEE"))
+        .add_source(Environment::with_prefix("TIMOTHE"))
         .build()?;
 
     Ok(settings.try_deserialize()?)
 }
 
 #[tokio::main]
-/// Entrypoint for the Timothee discord bot.
+/// Entrypoint for the Timothe discord bot.
 /// Timothee is a simple discord that watches any ICS calendar and warns a set of users when it changes.
 ///
 /// It's developped and maintained by Matthieu Pignolet <matthieu@matthieu-dev.xyz> on github (https://github.com/MatthieuCoder/Timothee-rs)

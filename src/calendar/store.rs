@@ -87,3 +87,13 @@ impl<'a> Calendar<'a> {
         }
     }
 }
+
+pub struct Store<'a> {
+    pub calendars: HashMap<String, Calendar<'a>>,
+}
+
+impl Store<'_> {
+    pub fn persist() {
+        unimplemented!();
+    }
+}
