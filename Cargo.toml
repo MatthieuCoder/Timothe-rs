@@ -1,0 +1,25 @@
+[package]
+name = "timothee-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "*", features = ["full"] }
+config = { version = "*", features = ["toml"] }
+serde = "*"
+log = "*"
+pretty_env_logger = "*"
+poise = "0.3.0"
+futures = "*"
+reqwest = "*"
+bytes = "*"
+futures-util = "0.3.24"
+tokio-cron-scheduler = "*"
+chrono = "*"
+cron = "*"
+chrono-tz = "0.6.3"
+
+[dependencies.ical]
+version = "0.7.*"
+default-features = false
+features = ["ical", "vcard"]
