@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 tokio = { version = "*", features = ["full"] }
 config = { version = "*", features = ["toml"] }
-serde = "*"
+serde = { version = "*", features = ["rc"] }
 log = "*"
 pretty_env_logger = "*"
 poise = "0.3.0"
@@ -14,10 +14,13 @@ futures = "*"
 reqwest = "*"
 bytes = "*"
 futures-util = "0.3.24"
-tokio-cron-scheduler = "*"
 chrono = "*"
-cron = "*"
+saffron = "0.1.0"
 chrono-tz = "0.6.3"
+shellexpand = "2.1.2"
+dirs = "4.0.0"
+postcard = { version = "1.0.0", features = ["alloc"] }
+anyhow = "*"
 
 [dependencies.ical]
 version = "0.7.*"

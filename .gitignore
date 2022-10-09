@@ -16,3 +16,4 @@ Cargo.lock
 
 # Contains dev env files
 config.toml
+db

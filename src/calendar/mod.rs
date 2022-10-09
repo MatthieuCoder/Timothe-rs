@@ -1,35 +1,35 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use bytes::Buf;
 use chrono::NaiveDateTime;
 use futures::Future;
-use log::debug;
+use log::{debug, error};
 
 use crate::{
     calendar::store::CalendarEvent,
     cfg::{Config, ICalWatchItem},
 };
 
-use self::store::{Calendar, Store};
+use self::store::Store;
 pub mod store;
 
-pub struct CalendarWatcher<'a> {
+pub struct CalendarWatcher {
     config: Arc<Config>,
-    store: Store<'a>,
+    pub store: Store,
 }
 
-impl CalendarWatcher<'_> {
-    pub fn new(config: Arc<Config>) -> Self {
-        CalendarWatcher {
-            config,
-            store: Store {
-                calendars: HashMap::new(),
-            },
-        }
+type CalendarParsed = Vec<CalendarEvent>;
+
+impl CalendarWatcher {
+    pub fn new(config: Arc<Config>) -> Result<Self, anyhow::Error> {
+        Ok(CalendarWatcher {
+            config: config.clone(),
+            store: Store::new(config)?,
+        })
     }
 
     #[inline]
-    async fn fetch_task(watch_item: &ICalWatchItem) -> Result<Calendar, reqwest::Error> {
+    async fn fetch_task(watch_item: &ICalWatchItem) -> Result<CalendarParsed, anyhow::Error> {
         let data = reqwest::get(&watch_item.source)
             .await?
             .bytes()
@@ -37,7 +37,7 @@ impl CalendarWatcher<'_> {
             .reader();
 
         let parser = ical::IcalParser::new(data);
-        let calendar = Calendar::new();
+        let mut events = CalendarParsed::new();
 
         for cal in parser {
             if let Ok(calendar) = cal {
@@ -50,14 +50,12 @@ impl CalendarWatcher<'_> {
                                 "DTSTART" => {
                                     debug!("Parsing DTSTART: {}", value);
                                     cal_event.start =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")
-                                            .unwrap();
+                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
                                 }
                                 "DTEND" => {
                                     debug!("Parsing DTEND: {}", value);
                                     cal_event.end =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")
-                                            .unwrap();
+                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
                                 }
                                 "SUMMARY" => {
                                     cal_event.summary = value.to_string();
@@ -71,14 +69,12 @@ impl CalendarWatcher<'_> {
                                 "LAST-MODIFIED" => {
                                     debug!("Parsing LAST-MODIFIED: {}", value);
                                     cal_event.last_modified =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")
-                                            .unwrap();
+                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
                                 }
                                 "CREATED" => {
                                     debug!("Parsing CREATED: {}", value);
                                     cal_event.created =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")
-                                            .unwrap();
+                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
                                 }
                                 "UID" => {
                                     cal_event.uid = value.to_string();
@@ -88,36 +84,48 @@ impl CalendarWatcher<'_> {
                         }
                     }
 
-                    println!("{:#?}", cal_event);
+                    events.push(cal_event);
                 }
             } else {
                 continue;
             }
         }
 
-        Ok(calendar)
+        Ok(events)
     }
 
     #[inline]
-    fn tasks(
-        &self,
-    ) -> impl Iterator<Item = impl Future<Output = (&String, Result<Calendar, reqwest::Error>)>>
+    fn tasks<'b>(
+        config: &'b Config,
+    ) -> impl Iterator<Item = impl Future<Output = (String, Result<CalendarParsed, anyhow::Error>)> + 'b>
     {
-        self.config
+        config
             .calendar
             .watchers
             .iter()
-            .map(|(name, object)| async move { (name, CalendarWatcher::fetch_task(object).await) })
+            .map(|(name, object)| async move {
+                (name.to_string(), CalendarWatcher::fetch_task(object).await)
+            })
     }
 
     #[allow(unused)]
-    pub async fn update_calendars(&self) {
-        let data = futures_util::future::join_all(self.tasks()).await;
+    pub async fn update_calendars(&mut self) {
+        let data = {
+            let tasks = CalendarWatcher::tasks(&self.config);
+            let data = futures_util::future::join_all(tasks).await;
 
-        for (calendar, result) in data {
+            data
+        };
+        let store = &mut self.store;
+
+        for (calendar_name, result) in data {
             match result {
-                Ok(cal) => {}
-                Err(err) => {}
+                Ok(cal) => {
+                    store.apply(calendar_name, cal);
+                }
+                Err(err) => {
+                    error!("failed to parse events for calendars {}", calendar_name);
+                }
             }
         }
     }

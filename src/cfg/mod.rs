@@ -17,14 +17,20 @@ pub struct ICalWatchItem {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct ICalWatchConfig {
+pub struct CalendarConfig {
     #[serde(flatten)]
     pub watchers: HashMap<String, ICalWatchItem>,
     pub cron_task: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct StorageConfig {
+    pub path: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub discord: DiscordConfig,
-    pub calendar: ICalWatchConfig,
+    pub calendar: CalendarConfig,
+    pub storage: StorageConfig,
 }
