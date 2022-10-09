@@ -21,7 +21,7 @@ pub async fn summary(ctx: Context<'_>) -> Result<(), Error> {
     let user_roles = &ctx.author_member().await.unwrap().roles;
 
     let duration = Duration::days(2);
-    let from = Utc::now() + Duration::days(7);
+    let from = Utc::now();
     let to = from + duration;
 
     let user_calendars = sch
