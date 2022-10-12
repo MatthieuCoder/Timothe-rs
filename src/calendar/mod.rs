@@ -124,7 +124,7 @@ impl CalendarWatcher {
                     store.apply(calendar_name, cal);
                 }
                 Err(err) => {
-                    error!("failed to parse events for calendars {}", calendar_name);
+                    error!("failed to parse events for calendars {}: {}", calendar_name, err);
                 }
             }
         }

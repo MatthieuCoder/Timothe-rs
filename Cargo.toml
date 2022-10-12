@@ -11,7 +11,7 @@ log = "*"
 pretty_env_logger = "*"
 poise = "0.3.0"
 futures = "*"
-reqwest = "*"
+reqwest = { version = "*", features = ["rustls-tls" ] }
 bytes = "*"
 futures-util = "0.3.24"
 chrono = "*"

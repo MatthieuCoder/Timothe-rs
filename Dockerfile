@@ -13,7 +13,7 @@ RUN cargo build --release --bin timothe-rs
 
 FROM debian:buster-slim AS runtime
 WORKDIR app
-RUN apt-get update && apt-get install -y openssl
+RUN apt-get update && apt-get install -y openssl ca-certificates
 
 COPY --from=builder /app/target/release/timothe-rs /usr/local/bin
 ENTRYPOINT ["/usr/local/bin/timothe-rs"]
