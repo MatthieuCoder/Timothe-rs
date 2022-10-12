@@ -95,15 +95,19 @@ async fn main() -> Result<(), anyhow::Error> {
                 commands::schedule::root(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Some(config.discord.prefix.clone()),
+                prefix: None,
                 edit_tracker: Some(poise::EditTracker::for_timespan(Duration::from_secs(3600))),
+                mention_as_prefix: true,
                 ..Default::default()
             },
             on_error: |error| Box::pin(on_error(error)),
+            
+            
             ..Default::default()
         };
         poise::Framework::builder()
             .token(config.discord.token.clone())
+            
             .user_data_setup(move |_ctx, _ready, _framework| {
                 Box::pin(async move {
                     Ok(Data {
@@ -117,7 +121,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 serenity::GatewayIntents::non_privileged()
                     | serenity::GatewayIntents::MESSAGE_CONTENT,
             )
-            .run()
+            .run_autosharded()
             .await
             .unwrap();
     });
