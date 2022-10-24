@@ -1,16 +1,16 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use bytes::Buf;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use futures::Future;
 use log::{debug, error};
 
 use crate::{
     calendar::store::CalendarEvent,
-    cfg::{Config, ICalWatchItem},
+    cfg::{CalendarItem, Config},
 };
 
-use self::store::Store;
+use self::store::{Store, UpdateResult};
 pub mod store;
 
 pub struct CalendarWatcher {
@@ -29,7 +29,7 @@ impl CalendarWatcher {
     }
 
     #[inline]
-    async fn fetch_task(watch_item: &ICalWatchItem) -> Result<CalendarParsed, anyhow::Error> {
+    async fn fetch_task(watch_item: &CalendarItem) -> Result<CalendarParsed, anyhow::Error> {
         let data = reqwest::get(&watch_item.source)
             .await?
             .bytes()
@@ -97,19 +97,21 @@ impl CalendarWatcher {
     #[inline]
     fn tasks<'b>(
         config: &'b Config,
-    ) -> impl Iterator<Item = impl Future<Output = (String, Result<CalendarParsed, anyhow::Error>)> + 'b>
-    {
+    ) -> impl Iterator<
+        Item = impl Future<Output = (String, NaiveDateTime, Result<CalendarParsed, anyhow::Error>)> + 'b,
+    > {
         config
             .calendar
             .watchers
             .iter()
             .map(|(name, object)| async move {
-                (name.to_string(), CalendarWatcher::fetch_task(object).await)
+                let result = CalendarWatcher::fetch_task(object).await;
+                (name.to_string(), Utc::now().naive_local(), result)
             })
     }
 
     #[allow(unused)]
-    pub async fn update_calendars(&mut self) {
+    pub async fn update_calendars(&mut self) -> HashMap<std::string::String, Vec<UpdateResult>> {
         let data = {
             let tasks = CalendarWatcher::tasks(&self.config);
             let data = futures_util::future::join_all(tasks).await;
@@ -118,15 +120,27 @@ impl CalendarWatcher {
         };
         let store = &mut self.store;
 
-        for (calendar_name, result) in data {
+        let mut calendars = HashMap::new();
+
+        for (calendar_name, fetch_date, result) in data {
             match result {
                 Ok(cal) => {
-                    store.apply(calendar_name, cal);
+                    calendars.insert(
+                        calendar_name.clone(),
+                        store
+                            .apply(calendar_name.clone(), cal, fetch_date)
+                            .expect("failed to update calendar"),
+                    );
                 }
                 Err(err) => {
-                    error!("failed to parse events for calendars {}: {}", calendar_name, err);
+                    error!(
+                        "failed to parse events for calendars {}: {}",
+                        calendar_name, err
+                    );
                 }
             }
         }
+
+        calendars
     }
 }

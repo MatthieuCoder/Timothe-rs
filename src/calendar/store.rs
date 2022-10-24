@@ -9,12 +9,16 @@ use anyhow::bail;
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
-use crate::cfg::Config;
+use crate::cfg::{CalendarItem, Config};
 
+#[derive(PartialEq, Eq, Debug)]
 pub enum UpdateResult {
-    Created,
-    Updated(Arc<CalendarEvent>),
-    Unchanged,
+    Created(Arc<CalendarEvent>),
+    Updated {
+        old: Arc<CalendarEvent>,
+        new: Arc<CalendarEvent>,
+    },
+    Removed(Arc<CalendarEvent>),
 }
 
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -41,15 +45,18 @@ pub struct CalendarEvent {
 
 /// A calendar is a collection of events
 /// and utility functions used to search and sort them.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Calendar {
     // used to easily compute using dates
     tree: BTreeMap<NaiveDateTime, Arc<CalendarEvent>>,
     // used to search based on uids
     uid_index: HashMap<String, Arc<CalendarEvent>>,
+
+    #[serde(skip)]
+    config: CalendarItem,
 }
 
-impl<'a> Calendar {
+impl Calendar {
     pub fn get_range(&self, date: NaiveDateTime, duration: Duration) -> Vec<Arc<CalendarEvent>> {
         // get all the events using the tree map
         // this is fast because we just search the binary tree (=few comparaisons to get to the leaf node containing the pointer to the calendar event)
@@ -63,30 +70,99 @@ impl<'a> Calendar {
         return search;
     }
 
-    pub fn update(&'a mut self, event: CalendarEvent) -> UpdateResult {
-        let event = Arc::new(event);
-
-        if self.uid_index.contains_key(&event.uid) {
-            let existing = self.uid_index.get_mut(&event.uid).expect("internal error");
-            if *existing == event {
-                UpdateResult::Unchanged
-            } else {
-                self.tree.remove(&existing.start);
-                let old = existing.clone();
-                *existing = event;
-
-                self.tree.insert(existing.start, existing.clone());
-
-                UpdateResult::Updated(old)
-            }
-        } else {
-            let uid = event.uid.clone();
-            self.uid_index.insert(uid.clone(), event);
-            let moved_event = self.uid_index.get(&uid).expect("internal error");
-
-            self.tree.insert(moved_event.start, moved_event.clone());
-            UpdateResult::Created
+    pub fn new(config: CalendarItem) -> Self {
+        Calendar {
+            tree: BTreeMap::new(),
+            uid_index: HashMap::new(),
+            config,
         }
+    }
+
+    /// Updates an event in a calendar
+    /// Returns a list of edits made by the program to match the given calendar
+    /// WIP: This algorithm needs heavy optimization and is used only for testing purposes
+    pub fn update(
+        &mut self,
+        events: Vec<CalendarEvent>,
+        fetch_time: NaiveDateTime,
+    ) -> Vec<UpdateResult> {
+        // use a tree of the indexed data for better handling
+        let tree_index = BTreeMap::from_iter(events.into_iter().map(|f| (f.start, Arc::new(f))));
+
+        // compute the last event stored in the current calendar
+        let existing_end = self
+            .tree
+            .iter()
+            .next()
+            .and_then(|f| Some(f.0))
+            .unwrap_or_else(|| &NaiveDateTime::MAX)
+            .clone();
+
+        let mut updates = vec![];
+
+        // todo: optimize by using a single loop
+
+        // for each event we want to add
+        for (_, new) in &tree_index {
+            // if the event already exists, we want to update the event and emit an event
+            if self.uid_index.contains_key(&new.uid) {
+                let existing = self
+                    .uid_index
+                    .get_mut(&new.uid)
+                    .expect("expected an event to be in the uid_index, but it wasn't present");
+
+                // if the event is different, we want to update it
+                if existing != new {
+                    let old = existing.clone();
+
+                    // update the uid index
+                    *existing = new.clone();
+                    // update in the tree
+                    self.tree.insert(existing.start, new.clone());
+
+                    // emit the event
+                    updates.push(UpdateResult::Updated {
+                        old,
+                        new: new.clone(),
+                    })
+                }
+            } else {
+                // we want to create the event
+
+                let uid = new.uid.clone();
+                self.uid_index.insert(uid, new.clone());
+                self.tree.insert(new.start, new.clone());
+
+                // we should emit an update only if the event is added before the last event present at the start.
+                if new.start < existing_end {
+                    updates.push(UpdateResult::Created(new.clone()))
+                }
+            }
+        }
+
+        let end_slice =
+            fetch_time + Duration::from_std(self.config.fetch_time).expect("invalid date");
+
+        // we get all the events present in the range [add_start,add_end]
+        // this is used to check if there are events that were deleted
+        let range: Vec<Arc<CalendarEvent>> = self
+            .tree
+            .range(fetch_time..end_slice)
+            .map(|f| f.1.clone())
+            .collect();
+
+        // now we are going to check if there are deleted events in the stored range
+        for event in range {
+            if !tree_index.contains_key(&event.start) {
+                // event need to be removed
+                self.tree.remove(&event.start);
+                let old = self.uid_index.remove(&event.uid).expect("");
+
+                updates.push(UpdateResult::Removed(old));
+            }
+        }
+
+        updates
     }
 }
 
@@ -95,6 +171,7 @@ pub type Data = HashMap<String, Calendar>;
 #[derive(Debug)]
 pub struct Store {
     pub data: Data,
+    config: Arc<Config>,
     save_path: String,
 }
 
@@ -110,6 +187,7 @@ impl Store {
         match fs::read(&path) {
             Ok(r) => Ok(Store {
                 data: postcard::from_bytes(&r)?,
+                config,
                 save_path: path,
             }),
             Err(err) => match err.kind() {
@@ -117,28 +195,314 @@ impl Store {
                 io::ErrorKind::NotFound => Ok(Store {
                     data: Data::default(),
                     save_path: path,
+                    config,
                 }),
                 _ => bail!(err),
             },
         }
     }
 
-    pub fn apply(&mut self, calendar: String, events: Vec<CalendarEvent>) -> Result<Vec<UpdateResult>, anyhow::Error> {
+    pub fn apply(
+        &mut self,
+        calendar: String,
+        events: Vec<CalendarEvent>,
+        fetch_time: NaiveDateTime,
+    ) -> Result<Vec<UpdateResult>, anyhow::Error> {
         let cal = if let Some(calendar) = self.data.get_mut(&calendar) {
             calendar
         } else {
-            self.data.insert(calendar.clone(), Calendar::default());
+            self.data.insert(
+                calendar.clone(),
+                Calendar::new(
+                    self.config
+                        .calendar
+                        .watchers
+                        .get(&calendar)
+                        .expect("unknown calendar: unreacheable")
+                        .clone(),
+                ),
+            );
 
             self.data.get_mut(&calendar).expect("internal error")
         };
 
         // Returned updates values
-        let value = events.into_iter().map(|elem| cal.update(elem)).collect();
+        let value = cal.update(events, fetch_time);
 
         // Persist the db
         let data = postcard::to_allocvec(&self.data)?;
         fs::write(&self.save_path, data)?;
 
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use chrono::{NaiveDateTime};
+    use poise::serenity_prelude::{ChannelId, RoleId};
+
+    use crate::cfg::CalendarItem;
+
+    use super::{Calendar, CalendarEvent, UpdateResult};
+
+    #[test]
+    fn add_events() {
+        // use a calendar with two weeks checks
+        let mut cal: Calendar = Calendar::new(CalendarItem {
+            source: String::default(),
+            channel: ChannelId(0),
+            role: RoleId(0),
+            fetch_time: std::time::Duration::from_secs(21_000),
+        });
+
+        let test_events = vec![
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(0, 0),
+                end: NaiveDateTime::from_timestamp(60, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "000".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(60, 0),
+                end: NaiveDateTime::from_timestamp(120, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "002".to_string(),
+            },
+        ];
+
+        let updates = cal.update(test_events.clone(), NaiveDateTime::from_timestamp(0, 0));
+
+        let expected = vec![
+            UpdateResult::Created(Arc::new(test_events[0].clone())),
+            UpdateResult::Created(Arc::new(test_events[1].clone())),
+        ];
+
+        assert_eq!(updates, expected)
+    }
+
+    #[test]
+    fn edit_events() {
+        let mut cal: Calendar = Calendar::new(CalendarItem {
+            source: String::default(),
+            channel: ChannelId(0),
+            role: RoleId(0),
+            fetch_time: std::time::Duration::from_secs(21_000),
+        });
+        let test_events = vec![
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(0, 0),
+                end: NaiveDateTime::from_timestamp(60, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "000".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(60, 0),
+                end: NaiveDateTime::from_timestamp(120, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "002".to_string(),
+            },
+        ];
+
+        let inserts = cal.update(test_events.clone(), NaiveDateTime::from_timestamp(0, 0));
+
+        let expected = vec![
+            UpdateResult::Created(Arc::new(test_events[0].clone())),
+            UpdateResult::Created(Arc::new(test_events[1].clone())),
+        ];
+
+        assert_eq!(inserts, expected);
+
+        let updates_data = vec![
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(0, 0),
+                end: NaiveDateTime::from_timestamp(60, 0),
+                location: "".to_string(),
+                description: "this is updated".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "000".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(60, 0),
+                end: NaiveDateTime::from_timestamp(120, 0),
+                location: "".to_string(),
+                description: "this is updated".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "002".to_string(),
+            },
+        ];
+
+        let updates = cal.update(updates_data.clone(), NaiveDateTime::from_timestamp(0, 0));
+
+        let expected = vec![
+            UpdateResult::Updated {
+                old: Arc::new(test_events[0].clone()),
+                new: Arc::new(updates_data[0].clone()),
+            },
+            UpdateResult::Updated {
+                old: Arc::new(test_events[1].clone()),
+                new: Arc::new(updates_data[1].clone()),
+            },
+        ];
+
+        assert_eq!(updates, expected)
+    }
+
+    #[test]
+    fn remove_test() {
+        let mut cal: Calendar = Calendar::new(CalendarItem {
+            source: String::default(),
+            channel: ChannelId(0),
+            role: RoleId(0),
+            fetch_time: std::time::Duration::from_secs(21_000),
+        });
+
+        let test_events = vec![
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(0, 0),
+                end: NaiveDateTime::from_timestamp(60, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "000".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event2".to_string(),
+                start: NaiveDateTime::from_timestamp(60, 0),
+                end: NaiveDateTime::from_timestamp(120, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "002".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event3".to_string(),
+                start: NaiveDateTime::from_timestamp(120, 0),
+                end: NaiveDateTime::from_timestamp(180, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "003".to_string(),
+            },
+        ];
+
+        cal.update(test_events.clone(), NaiveDateTime::from_timestamp(0, 0));
+
+        let updates_data = vec![
+        ];
+
+        let updates = cal.update(updates_data.clone(), NaiveDateTime::from_timestamp(0, 0));
+
+        let expected = vec![
+            UpdateResult::Removed(Arc::new(test_events[0].clone())),
+            UpdateResult::Removed(Arc::new(test_events[1].clone())),
+            UpdateResult::Removed(Arc::new(test_events[2].clone())),
+        ];
+
+        assert_eq!(updates, expected)
+    }
+
+    #[test]
+    fn remove_test_2() {
+        let mut cal: Calendar = Calendar::new(CalendarItem {
+            source: String::default(),
+            channel: ChannelId(0),
+            role: RoleId(0),
+            fetch_time: std::time::Duration::from_secs(21_000),
+        });
+
+        let test_events = vec![
+
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(0, 0),
+                end: NaiveDateTime::from_timestamp(60, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "000".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event2".to_string(),
+                start: NaiveDateTime::from_timestamp(60, 0),
+                end: NaiveDateTime::from_timestamp(120, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "002".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event3".to_string(),
+                start: NaiveDateTime::from_timestamp(120, 0),
+                end: NaiveDateTime::from_timestamp(180, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "003".to_string(),
+            },
+        ];
+
+        cal.update(test_events.clone(), NaiveDateTime::from_timestamp(0, 0));
+
+        let updates_data = vec![
+
+            CalendarEvent {
+                summary: "test event1".to_string(),
+                start: NaiveDateTime::from_timestamp(0, 0),
+                end: NaiveDateTime::from_timestamp(60, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "000".to_string(),
+            },
+            CalendarEvent {
+                summary: "test event3".to_string(),
+                start: NaiveDateTime::from_timestamp(120, 0),
+                end: NaiveDateTime::from_timestamp(180, 0),
+                location: "".to_string(),
+                description: "".to_string(),
+                last_modified: NaiveDateTime::from_timestamp(0, 0),
+                created: NaiveDateTime::from_timestamp(0, 0),
+                uid: "003".to_string(),
+            },
+        ];
+
+        let updates = cal.update(updates_data.clone(), NaiveDateTime::from_timestamp(0, 0));
+
+        let expected = vec![
+            UpdateResult::Removed(Arc::new(test_events[1].clone())),
+        ];
+
+        assert_eq!(updates, expected)
     }
 }

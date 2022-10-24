@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use anyhow::{bail};
 use calendar::CalendarWatcher;
 use chrono::Utc;
 use config::{Config, Environment, File};
@@ -58,7 +59,10 @@ async fn main() -> Result<(), anyhow::Error> {
     let config = Arc::from(load_config()?);
     let watcher = Arc::new(RwLock::new(CalendarWatcher::new(config.clone())?));
 
-    let schedule = saffron::Cron::new(config.calendar.cron_task.parse().unwrap());
+    let schedule = saffron::Cron::new(match config.calendar.cron_task.parse() {
+        Ok(r) => r,
+        Err(e) => bail!("failed to parse the cron expression: {}", e),
+    });
 
     let (shutdown_send, mut shutdown_recv) = mpsc::unbounded_channel::<()>();
 
@@ -70,9 +74,9 @@ async fn main() -> Result<(), anyhow::Error> {
         }
         loop {
             let current_time = Utc::now();
-            let next = schedule.next_after(current_time).unwrap();
+            let next = schedule.next_after(current_time).expect("failed to get next date");
             info!("waiting {}, trigger in {}", next, next - current_time);
-            let wait = sleep((next - current_time).to_std().unwrap());
+            let wait = sleep((next - current_time).to_std().expect("failed"));
 
             tokio::select! {
                 _ = wait => {
@@ -101,13 +105,11 @@ async fn main() -> Result<(), anyhow::Error> {
                 ..Default::default()
             },
             on_error: |error| Box::pin(on_error(error)),
-            
-            
+
             ..Default::default()
         };
         poise::Framework::builder()
             .token(config.discord.token.clone())
-            
             .user_data_setup(move |_ctx, _ready, _framework| {
                 Box::pin(async move {
                     Ok(Data {
@@ -123,7 +125,7 @@ async fn main() -> Result<(), anyhow::Error> {
             )
             .run_autosharded()
             .await
-            .unwrap();
+            .expect("failed to start discord client")
     });
 
     match signal::ctrl_c().await {

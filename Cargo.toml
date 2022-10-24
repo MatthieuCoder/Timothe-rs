@@ -14,7 +14,7 @@ futures = "*"
 reqwest = { version = "*", features = ["rustls-tls" ] }
 bytes = "*"
 futures-util = "0.3.24"
-chrono = "*"
+chrono = { version = "*", features = ["serde"] }
 saffron = "0.1.0"
 chrono-tz = "0.6.3"
 shellexpand = "2.1.2"
