@@ -13,7 +13,7 @@ pub struct CalendarItem {
     pub source: String,
     pub channel: ChannelId,
     pub role: RoleId,
-    pub fetch_time: Duration,
+    pub fetch_time: String,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]

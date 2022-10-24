@@ -21,6 +21,7 @@ shellexpand = "2.1.2"
 dirs = "4.0.0"
 postcard = { version = "1.0.0", features = ["alloc"] }
 anyhow = "*"
+humantime = "2.1.0"
 
 [dependencies.ical]
 version = "0.7.*"

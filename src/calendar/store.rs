@@ -141,7 +141,7 @@ impl Calendar {
         }
 
         let end_slice =
-            fetch_time + Duration::from_std(self.config.fetch_time).expect("invalid date");
+            fetch_time + Duration::from_std(humantime::parse_duration(&self.config.fetch_time).expect("invalid format")).expect("invalid date");
 
         // we get all the events present in the range [add_start,add_end]
         // this is used to check if there are events that were deleted
@@ -255,7 +255,7 @@ mod test {
             source: String::default(),
             channel: ChannelId(0),
             role: RoleId(0),
-            fetch_time: std::time::Duration::from_secs(21_000),
+            fetch_time: "2w".to_string(),
         });
 
         let test_events = vec![
@@ -297,7 +297,7 @@ mod test {
             source: String::default(),
             channel: ChannelId(0),
             role: RoleId(0),
-            fetch_time: std::time::Duration::from_secs(21_000),
+            fetch_time: "2w".to_string(),
         });
         let test_events = vec![
             CalendarEvent {
@@ -376,7 +376,7 @@ mod test {
             source: String::default(),
             channel: ChannelId(0),
             role: RoleId(0),
-            fetch_time: std::time::Duration::from_secs(21_000),
+            fetch_time: "2w".to_string(),
         });
 
         let test_events = vec![
@@ -434,7 +434,7 @@ mod test {
             source: String::default(),
             channel: ChannelId(0),
             role: RoleId(0),
-            fetch_time: std::time::Duration::from_secs(21_000),
+            fetch_time: "2w".to_string(),
         });
 
         let test_events = vec![
