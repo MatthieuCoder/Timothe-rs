@@ -5,7 +5,7 @@ use calendar::CalendarWatcher;
 use chrono::Utc;
 use config::{Config, Environment, File};
 use handler::Data;
-use log::info;
+use log::{info, error};
 use poise::serenity_prelude::{self as serenity, ChannelId};
 use tokio::{
     signal,
@@ -29,17 +29,15 @@ fn load_config() -> Result<cfg::Config, anyhow::Error> {
 }
 
 async fn on_error(error: poise::FrameworkError<'_, Data, handler::Error>) {
-    // This is our custom error handler
-    // They are many errors that can occur, so we only handle the ones we want to customize
-    // and forward the rest to the default handler
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
         poise::FrameworkError::Command { error, ctx } => {
-            println!("Error in command `{}`: {:?}", ctx.command().name, error,);
+            let _ = ctx.send(|f| f.content(format!("And error occured! ```{}```", error))).await;
+            error!("Error in command `{}`: {:?}", ctx.command().name, error,);
         }
         error => {
             if let Err(e) = poise::builtins::on_error(error).await {
-                println!("Error while handling error: {}", e)
+                error!("Error while handling error: {}", e)
             }
         }
     }
@@ -123,6 +121,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     for (name, updates) in updates {
 
                         for update in updates {
+                            // this is a debug channel!
                             ChannelId(1034359605771386941).send_message(&f0, |f| {
                                 match update {
                                     calendar::store::UpdateResult::Created(main) => {
@@ -160,7 +159,7 @@ async fn main() -> Result<(), anyhow::Error> {
             shutdown_send.send(())?;
         }
         Err(err) => {
-            eprintln!("Unable to listen for shutdown signal: {}", err);
+            error!("Unable to listen for shutdown signal: {}", err);
             // we also shut down in case of error
         }
     }
