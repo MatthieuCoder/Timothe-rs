@@ -1,17 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use calendar::CalendarWatcher;
 use chrono::Utc;
 use config::{Config, Environment, File};
+use futures::future::select;
 use handler::Data;
-use log::{info, error};
-use poise::serenity_prelude::{self as serenity, ChannelId};
-use tokio::{
-    signal,
-    sync::{mpsc, RwLock},
-    time::sleep,
-};
+use log::{error, info};
+use poise::serenity_prelude::{self as serenity};
+use tokio::{signal, sync::RwLock, time::sleep};
 
 mod calendar;
 mod cfg;
@@ -32,7 +29,6 @@ async fn on_error(error: poise::FrameworkError<'_, Data, handler::Error>) {
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
         poise::FrameworkError::Command { error, ctx } => {
-            let _ = ctx.send(|f| f.content(format!("And error occured! ```{}```", error))).await;
             error!("Error in command `{}`: {:?}", ctx.command().name, error,);
         }
         error => {
@@ -57,12 +53,12 @@ async fn main() -> Result<(), anyhow::Error> {
     let config = Arc::from(load_config()?);
     let watcher = Arc::new(RwLock::new(CalendarWatcher::new(config.clone())?));
 
-    let schedule = saffron::Cron::new(match config.calendar.cron_task.parse() {
+    let schedule = saffron::Cron::new(match config.calendar.refetch.parse() {
         Ok(r) => r,
         Err(e) => bail!("failed to parse the cron expression: {}", e),
     });
 
-    let (shutdown_send, mut shutdown_recv) = mpsc::unbounded_channel::<()>();
+    let (shutdown_send, mut shutdown_recv) = tokio::sync::broadcast::channel(1);
 
     let options = poise::FrameworkOptions {
         commands: vec![
@@ -80,7 +76,10 @@ async fn main() -> Result<(), anyhow::Error> {
 
         ..Default::default()
     };
+
     let w0 = watcher.clone();
+    let w1 = watcher.clone();
+
     let framework = poise::Framework::builder()
         .token(config.discord.token.clone())
         .user_data_setup(move |_ctx, _, _| {
@@ -97,72 +96,72 @@ async fn main() -> Result<(), anyhow::Error> {
         )
         .build()
         .await
-        .expect("failed to create framework");
+        .context("failed to create framework")?;
 
-    let w1 = watcher.clone();
-    let f0 = framework.clone().client().cache_and_http.http.clone();
-    tokio::spawn(async move {
-        {
-            let mut wat = w1.write().await;
-            wat.update_calendars().await;
-        }
+    let watcher: tokio::task::JoinHandle<Result<(), anyhow::Error>> = tokio::spawn(async move {
+        // update calendars at the start to ensure availability.
+        let mut wat = w1.write().await;
+        wat.update_calendars().await?;
+
         loop {
+            // calculate the next cron execution and wait
             let current_time = Utc::now();
+
+            // this souldn't fail.
+            // if it does, we should terminate
             let next = schedule
                 .next_after(current_time)
-                .expect("failed to get next date");
-            info!("waiting {}, trigger in {}", next, next - current_time);
-            let wait = sleep((next - current_time).to_std().expect("failed"));
+                .context("failed to get next date")?;
+
+            let sleep_time = next - current_time;
+            info!("waiting {}s, trigger at {}", sleep_time.num_seconds(), next);
+
+            let wait = sleep(
+                sleep_time
+                    .to_std()
+                    .context("failed to convert a chrono duration to a std duration")?,
+            );
+
             tokio::select! {
                 _ = wait => {
                     let mut wat = w1.write().await;
-                    let updates = wat.update_calendars().await;
-
-                    for (name, updates) in updates {
-
-                        for update in updates {
-                            // this is a debug channel!
-                            ChannelId(1034359605771386941).send_message(&f0, |f| {
-                                match update {
-                                    calendar::store::UpdateResult::Created(main) => {
-                                        f.content(format!("Evènement in {} ajouté: {:?}", name, main))
-                                    },
-                                    calendar::store::UpdateResult::Updated { old, new } => {
-
-                                        f.content(format!("Evènement in {} modifié: {:?} => {:?}", name, old, new))
-                                    },
-                                    calendar::store::UpdateResult::Removed(main) =>{
-                                        f.content(format!("Evènement in {} supprimé: {:?}", name, main))
-                                    },
-                                }
-                            }).await.expect("failed to send message");
-                        }
-                    }
-
+                    let _updates = wat.update_calendars().await?;
                 },
                 _ = shutdown_recv.recv() => {
-                    return;
+                    return Ok(());
                 }
             }
         }
     });
 
-    tokio::spawn(async move {
+    let discord = tokio::spawn(async move {
         framework
             .start_autosharded()
             .await
-            .expect("failed to start");
+            .context("failed to start discord bot")
     });
 
-    match signal::ctrl_c().await {
-        Ok(()) => {
-            shutdown_send.send(())?;
+    tokio::spawn(async move {
+        match signal::ctrl_c().await {
+            Ok(()) => {
+                shutdown_send
+                    .send(())
+                    .context("failed to send a shutdown signal")?;
+            }
+            Err(err) => {
+                bail!(err)
+            }
         }
-        Err(err) => {
-            error!("Unable to listen for shutdown signal: {}", err);
-            // we also shut down in case of error
-        }
-    }
+
+        Ok(())
+    });
+
+    let task = match select(discord, watcher).await {
+        futures::future::Either::Left(r) => r.0?,
+        futures::future::Either::Right(r) => r.0?,
+    };
+
+    task?;
 
     Ok(())
 }

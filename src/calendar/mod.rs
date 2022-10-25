@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use anyhow::Context;
 use bytes::Buf;
 use chrono::{NaiveDateTime, Utc};
 use futures::Future;
@@ -65,9 +66,13 @@ impl CalendarWatcher {
                                     cal_event.location = value.to_string();
                                 }
                                 "DESCRIPTION" => {
-                                    let re = Regex::new(r"\(Exported\s:\d{2}/\d{2}/\d{4}\s\d{2}:\d{2}\)").unwrap();
+                                    let re = Regex::new(
+                                        r"\(Exported\s:\d{2}/\d{2}/\d{4}\s\d{2}:\d{2}\)",
+                                    )
+                                    .unwrap();
 
-                                    cal_event.description = re.replace_all(value, "").trim().to_string();
+                                    cal_event.description =
+                                        re.replace_all(value, "").trim().to_string();
                                 }
                                 "UID" => {
                                     cal_event.uid = value.to_string();
@@ -95,7 +100,7 @@ impl CalendarWatcher {
     > {
         config
             .calendar
-            .watchers
+            .calendars
             .iter()
             .map(|(name, object)| async move {
                 let result = CalendarWatcher::fetch_task(object).await;
@@ -104,7 +109,7 @@ impl CalendarWatcher {
     }
 
     #[allow(unused)]
-    pub async fn update_calendars(&mut self) -> HashMap<std::string::String, Vec<UpdateResult>> {
+    pub async fn update_calendars(&mut self) -> Result<HashMap<std::string::String, Vec<UpdateResult>>, anyhow::Error> {
         let data = {
             let tasks = CalendarWatcher::tasks(&self.config);
             let data = futures_util::future::join_all(tasks).await;
@@ -121,8 +126,7 @@ impl CalendarWatcher {
                     calendars.insert(
                         calendar_name.clone(),
                         store
-                            .apply(calendar_name.clone(), cal, fetch_date)
-                            .expect("failed to update calendar"),
+                            .apply(calendar_name.clone(), cal, fetch_date).context("failed to update calendar")?,
                     );
                 }
                 Err(err) => {
@@ -134,6 +138,6 @@ impl CalendarWatcher {
             }
         }
 
-        calendars
+        Ok(calendars)
     }
 }

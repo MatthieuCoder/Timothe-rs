@@ -22,9 +22,9 @@ pub async fn groups(ctx: Context<'_>) -> Result<(), Error> {
     let user_calendars = sch
         .config
         .calendar
-        .watchers
+        .calendars
         .iter()
-        .filter(|watcher| user_roles.contains(&watcher.1.role));
+        .filter(|watcher| user_roles.iter().any(|f| watcher.1.role.contains(f)));
 
     let mut response = format!("**Vous faites partie des groupes: **\n\n");
 

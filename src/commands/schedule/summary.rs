@@ -1,9 +1,10 @@
-use chrono::{Datelike, Duration, Timelike, Utc};
+use anyhow::Context;
+use chrono::{Duration, Utc, Datelike, Timelike};
 use futures::{Stream, StreamExt};
 use log::debug;
 use poise::serenity_prelude::Color;
 
-use crate::handler::{Context, Error};
+use crate::handler::{Context as HandlerContext, Error};
 
 /// Convert a hsl color to rgb; This is used to make the color gradients
 fn hsv_to_rgb(h: u32, s: f64, l: f64) -> Color {
@@ -13,15 +14,15 @@ fn hsv_to_rgb(h: u32, s: f64, l: f64) -> Color {
 
     let (r0, g0, b0): (f64, f64, f64) = if h < 60 {
         (c, x, 0f64)
-    } else if 60 <= h && h < 120 {
+    } else if h < 120 {
         (x, c, 0f64)
-    } else if 120 <= h && h < 180 {
+    } else if h < 180 {
         (0f64, c, x)
-    } else if 180 <= h && h < 240 {
+    } else if h < 240 {
         (0f64, x, c)
-    } else if 240 <= h && h < 300 {
+    } else if h < 300 {
         (x, 0f64, c)
-    } else if 300 <= h && h < 360 {
+    } else if h < 360 {
         (c, 0f64, x)
     } else {
         unreachable!()
@@ -35,14 +36,14 @@ fn hsv_to_rgb(h: u32, s: f64, l: f64) -> Color {
 }
 
 async fn autocomplete_schedule<'a>(
-    ctx: Context<'_>,
+    ctx: HandlerContext<'_>,
     partial: &'a str,
 ) -> impl Stream<Item = String> + 'a {
     let names: Vec<String> = ctx
         .data()
         .config
         .calendar
-        .watchers
+        .calendars
         .keys()
         .map(|name| name.to_string())
         .collect();
@@ -55,7 +56,7 @@ async fn autocomplete_schedule<'a>(
 #[poise::command(slash_command)]
 /// Affiche un résumé pour les prochains jours
 pub async fn summary(
-    ctx: Context<'_>,
+    ctx: HandlerContext<'_>,
 
     #[description = "L'emploi du temps à inspecter"]
     #[autocomplete = "autocomplete_schedule"]
@@ -68,11 +69,14 @@ pub async fn summary(
     let from = Utc::now();
     let to = from + duration;
 
-    let calendars = data.config.calendar.watchers.iter().filter(|watcher| {
+    // select all the calendars selected by the user
+    // either base on the schedules argument or by the 
+    // roles of the user.
+    let calendars = data.config.calendar.calendars.iter().filter(|watcher| {
         if let Some(calendar) = &schedule {
             calendar == watcher.0
         } else {
-            user_roles.contains(&watcher.1.role)
+            user_roles.iter().any(|f| watcher.1.role.contains(f))
         }
     });
 
@@ -86,12 +90,14 @@ pub async fn summary(
             Some(events)
         })
         .filter(|elem| elem.is_some())
+        // this is just to have the right type in the reduce function
+        // this is safe because we checked if all the members of the iterator are something
         .map(|elem| elem.expect("internal error"))
         .reduce(|mut f, mut x| {
             f.append(&mut x);
             f
         })
-        .expect("no data");
+        .context("couldn't reduce the events")?;
 
     ctx.send(|f| {
         f.ephemeral(true).content(format!(
