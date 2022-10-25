@@ -1,4 +1,5 @@
 use chrono::{Duration, Utc};
+use futures::{Stream, StreamExt};
 
 use crate::handler::{Context, Error};
 
@@ -26,24 +27,43 @@ pub async fn groups(ctx: Context<'_>) -> Result<(), Error> {
         .watchers
         .iter()
         .filter(|watcher| user_roles.contains(&watcher.1.role));
-    
-    let mut response = format!(
-        "**Vous faites partie des groupes: **\n\n"
-    );
+
+    let mut response = format!("**Vous faites partie des groupes: **\n\n");
 
     for (name, _) in user_calendars {
-        response += &format!(
-            "\t**\\* {}**",
-            name
-        );
+        response += &format!("\t**\\* {}**", name);
     }
 
     ctx.send(|f| f.content(response)).await?;
     Ok(())
 }
 
+async fn autocomplete_schedule<'a>(
+    ctx: Context<'_>,
+    partial: &'a str,
+) -> impl Stream<Item = String> + 'a {
+    let names: Vec<String> = ctx
+        .data()
+        .config
+        .calendar
+        .watchers
+        .keys()
+        .map(|name| name.to_string())
+        .collect();
+
+    futures::stream::iter(names)
+        .filter(move |name| futures::future::ready(name.starts_with(partial)))
+        .map(|name| name.to_string())
+}
+
 #[poise::command(slash_command)]
-pub async fn summary(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn summary(
+    ctx: Context<'_>,
+
+    #[description = "A number... idk I wanted to test number autocomplete"]
+    #[autocomplete = "autocomplete_schedule"]
+    schedule: Option<String>,
+) -> Result<(), Error> {
     let sch = ctx.data();
     let user_roles = &ctx.author_member().await.unwrap().roles;
 
@@ -51,16 +71,17 @@ pub async fn summary(ctx: Context<'_>) -> Result<(), Error> {
     let from = Utc::now();
     let to = from + duration;
 
-    let user_calendars = sch
-        .config
-        .calendar
-        .watchers
-        .iter()
-        .filter(|watcher| user_roles.contains(&watcher.1.role));
+    let user_calendars = sch.config.calendar.watchers.iter().filter(|watcher| {
+        if let Some(calendar) = &schedule {
+            calendar == watcher.0
+        } else {
+            user_roles.contains(&watcher.1.role)
+        }
+    });
 
     let a = sch.scheduler.read().await;
 
-    let b = user_calendars
+    let events = user_calendars
         .map(|(name, _)| {
             let calendar = a.store.data.get(name).unwrap();
             let events = calendar.get_range(from.naive_utc(), duration);
@@ -73,25 +94,34 @@ pub async fn summary(ctx: Context<'_>) -> Result<(), Error> {
         })
         .unwrap();
 
-    let mut response = format!(
-        "**Emploi du temps, de <t:{}> à <t:{}>:**\n\n",
-        from.timestamp(),
-        to.timestamp()
-    );
+    ctx.send(|f| {
+        f.ephemeral(true).content(format!(
+            "**Emploi du temps, de <t:{}> à <t:{}>:**\n\n",
+            from.timestamp(),
+            to.timestamp()
+        ));
 
-    for c in b {
-        response += &format!(
-            "**{} {}**\n\tde <t:{}> à <t:{}>\n\t`{}`\n\tDernière modification le <t:{}>\n\n",
-            c.location,
-            c.summary,
-            c.start.timestamp(),
-            c.end.timestamp(),
-            c.description.replace("\\n", ""),
-            c.last_modified.timestamp()
-        );
-    }
+        for event in events {
+            f.embed(|e| {
+                e.title(&event.summary)
+                    .description(format!(
+                        "<t:{}> à <t:{}>\n{}",
+                        event.start.timestamp(),
+                        event.end.timestamp(),
+                        event.description
+                    ))
+                    .field("Emplacement", &event.location, true)
+                    .field(
+                        "Dernière modification",
+                        format!("<t:{}>", event.last_modified),
+                        true,
+                    )
+            });
+        }
 
-    ctx.send(|f| f.content(response)).await?;
+        f
+    })
+    .await?;
 
     Ok(())
 }

@@ -1,6 +1,6 @@
-use std::{collections::HashMap, time::Duration};
 use poise::serenity_prelude::{ChannelId, RoleId};
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct DiscordConfig {
