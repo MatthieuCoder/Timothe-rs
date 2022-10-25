@@ -4,7 +4,7 @@ use anyhow::bail;
 use calendar::CalendarWatcher;
 use chrono::Utc;
 use config::{Config, Environment, File};
-use handler::{Data, Error};
+use handler::Data;
 use log::info;
 use poise::serenity_prelude::{self as serenity, ChannelId};
 use tokio::{
@@ -116,35 +116,35 @@ async fn main() -> Result<(), anyhow::Error> {
             info!("waiting {}, trigger in {}", next, next - current_time);
             let wait = sleep((next - current_time).to_std().expect("failed"));
             tokio::select! {
-                            _ = wait => {
-                                let mut wat = w1.write().await;
-                                let updates = wat.update_calendars().await;
+                _ = wait => {
+                    let mut wat = w1.write().await;
+                    let updates = wat.update_calendars().await;
 
-                                for (name, updates) in updates {
+                    for (name, updates) in updates {
 
-                                    for update in updates {
-                                        ChannelId(1034359605771386941).send_message(&f0, |f| {
-                                            match update {
-                                                calendar::store::UpdateResult::Created(main) => {
-                                                    f.content(format!("Evènement in {} ajouté: {}", name, main.uid))
-                                                },
-                                                calendar::store::UpdateResult::Updated { old, new } => {
+                        for update in updates {
+                            ChannelId(1034359605771386941).send_message(&f0, |f| {
+                                match update {
+                                    calendar::store::UpdateResult::Created(main) => {
+                                        f.content(format!("Evènement in {} ajouté: {}", name, main.uid))
+                                    },
+                                    calendar::store::UpdateResult::Updated { old, new } => {
 
-                                                    f.content(format!("Evènement in {} modifié: {} # {}", name, old.uid, new.uid))
-                                                },
-                                                calendar::store::UpdateResult::Removed(main) =>{
-                                                    f.content(format!("Evènement in {} supprimé: {}", name, main.uid))
-                                                },
-                                            }
-                                        }).await.expect("failed to send message");
-                                    }
+                                        f.content(format!("Evènement in {} modifié: {} # {}", name, old.uid, new.uid))
+                                    },
+                                    calendar::store::UpdateResult::Removed(main) =>{
+                                        f.content(format!("Evènement in {} supprimé: {}", name, main.uid))
+                                    },
                                 }
-
-                            },
-                            _ = shutdown_recv.recv() => {
-                                return;
-                            }
+                            }).await.expect("failed to send message");
                         }
+                    }
+
+                },
+                _ = shutdown_recv.recv() => {
+                    return;
+                }
+            }
         }
     });
 
