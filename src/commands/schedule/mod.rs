@@ -17,6 +17,7 @@ pub async fn root(_: Context<'_>) -> Result<(), Error> {
 }
 
 #[poise::command(slash_command)]
+/// Liste les groupes de l'utilisateur
 pub async fn groups(ctx: Context<'_>) -> Result<(), Error> {
     let sch = ctx.data();
     let user_roles = &ctx.author_member().await.unwrap().roles;
@@ -57,10 +58,11 @@ async fn autocomplete_schedule<'a>(
 }
 
 #[poise::command(slash_command)]
+/// Affiche un résumé pour les prochains jours
 pub async fn summary(
     ctx: Context<'_>,
 
-    #[description = "A number... idk I wanted to test number autocomplete"]
+    #[description = "L'emploi du temps à inspecter"]
     #[autocomplete = "autocomplete_schedule"]
     schedule: Option<String>,
 ) -> Result<(), Error> {
@@ -105,10 +107,10 @@ pub async fn summary(
             f.embed(|e| {
                 e.title(&event.summary)
                     .description(format!(
-                        "<t:{}> à <t:{}>\n{}",
+                        "<t:{}> à <t:{}>\n`{}`",
                         event.start.timestamp(),
                         event.end.timestamp(),
-                        event.description
+                        event.description.replace("\\n", "\n")
                     ))
                     .field("Emplacement", &event.location, true)
                     .field(

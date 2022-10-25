@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
-use anyhow::{bail};
+use anyhow::bail;
 use calendar::CalendarWatcher;
 use chrono::Utc;
 use config::{Config, Environment, File};
-use handler::Data;
+use handler::{Data, Error};
 use log::info;
-use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::{self as serenity, ChannelId};
 use tokio::{
     signal,
     sync::{mpsc, RwLock},
@@ -66,7 +66,43 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let (shutdown_send, mut shutdown_recv) = mpsc::unbounded_channel::<()>();
 
+    let options = poise::FrameworkOptions {
+        commands: vec![
+            commands::register(),
+            commands::help(),
+            commands::schedule::root(),
+        ],
+        prefix_options: poise::PrefixFrameworkOptions {
+            prefix: None,
+            edit_tracker: Some(poise::EditTracker::for_timespan(Duration::from_secs(3600))),
+            mention_as_prefix: true,
+            ..Default::default()
+        },
+        on_error: |error| Box::pin(on_error(error)),
+
+        ..Default::default()
+    };
+    let w0 = watcher.clone();
+    let framework = poise::Framework::builder()
+        .token(config.discord.token.clone())
+        .user_data_setup(move |_ctx, _, _| {
+            Box::pin(async move {
+                Ok(Data {
+                    config,
+                    scheduler: w0,
+                })
+            })
+        })
+        .options(options)
+        .intents(
+            serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT,
+        )
+        .build()
+        .await
+        .expect("failed to create framework");
+
     let w1 = watcher.clone();
+    let f0 = framework.clone().client().cache_and_http.http.clone();
     tokio::spawn(async move {
         {
             let mut wat = w1.write().await;
@@ -74,58 +110,49 @@ async fn main() -> Result<(), anyhow::Error> {
         }
         loop {
             let current_time = Utc::now();
-            let next = schedule.next_after(current_time).expect("failed to get next date");
+            let next = schedule
+                .next_after(current_time)
+                .expect("failed to get next date");
             info!("waiting {}, trigger in {}", next, next - current_time);
             let wait = sleep((next - current_time).to_std().expect("failed"));
-
             tokio::select! {
-                _ = wait => {
-                    let mut wat = w1.write().await;
-                    wat.update_calendars().await;
-                },
-                _ = shutdown_recv.recv() => {
-                    return;
-                }
-            }
+                            _ = wait => {
+                                let mut wat = w1.write().await;
+                                let updates = wat.update_calendars().await;
+
+                                for (name, updates) in updates {
+
+                                    for update in updates {
+                                        ChannelId(1034359605771386941).send_message(&f0, |f| {
+                                            match update {
+                                                calendar::store::UpdateResult::Created(main) => {
+                                                    f.content(format!("Evènement in {} ajouté: {}", name, main.uid))
+                                                },
+                                                calendar::store::UpdateResult::Updated { old, new } => {
+
+                                                    f.content(format!("Evènement in {} modifié: {} # {}", name, old.uid, new.uid))
+                                                },
+                                                calendar::store::UpdateResult::Removed(main) =>{
+                                                    f.content(format!("Evènement in {} supprimé: {}", name, main.uid))
+                                                },
+                                            }
+                                        }).await.expect("failed to send message");
+                                    }
+                                }
+
+                            },
+                            _ = shutdown_recv.recv() => {
+                                return;
+                            }
+                        }
         }
     });
 
-    let w2 = watcher.clone();
     tokio::spawn(async move {
-        let options = poise::FrameworkOptions {
-            commands: vec![
-                commands::register(),
-                commands::help(),
-                commands::schedule::root(),
-            ],
-            prefix_options: poise::PrefixFrameworkOptions {
-                prefix: None,
-                edit_tracker: Some(poise::EditTracker::for_timespan(Duration::from_secs(3600))),
-                mention_as_prefix: true,
-                ..Default::default()
-            },
-            on_error: |error| Box::pin(on_error(error)),
-
-            ..Default::default()
-        };
-        poise::Framework::builder()
-            .token(config.discord.token.clone())
-            .user_data_setup(move |_ctx, _ready, _framework| {
-                Box::pin(async move {
-                    Ok(Data {
-                        config,
-                        scheduler: w2,
-                    })
-                })
-            })
-            .options(options)
-            .intents(
-                serenity::GatewayIntents::non_privileged()
-                    | serenity::GatewayIntents::MESSAGE_CONTENT,
-            )
-            .run_autosharded()
+        framework
+            .start_autosharded()
             .await
-            .expect("failed to start discord client")
+            .expect("failed to start");
     });
 
     match signal::ctrl_c().await {
