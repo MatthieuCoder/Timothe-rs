@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use futures::{Stream, StreamExt};
+use poise::serenity_prelude::Color;
 
 use crate::handler::{Context, Error};
 
@@ -106,6 +107,11 @@ pub async fn summary(
         for event in events {
             f.embed(|e| {
                 e.title(&event.summary)
+                    .color(Color::from_rgb(
+                        (event.last_modified.timestamp() % 255).try_into().unwrap(),
+                        (event.end.timestamp() % 255).try_into().unwrap(),
+                        (event.start.timestamp() % 255).try_into().unwrap(),
+                    ))
                     .description(format!(
                         "<t:{}> à <t:{}>\n`{}`",
                         event.start.timestamp(),
@@ -115,7 +121,7 @@ pub async fn summary(
                     .field("Emplacement", &event.location, true)
                     .field(
                         "Dernière modification",
-                        format!("<t:{}>", event.last_modified),
+                        format!("<t:{}>", event.last_modified.timestamp()),
                         true,
                     )
             });
