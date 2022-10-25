@@ -4,6 +4,7 @@ use bytes::Buf;
 use chrono::{NaiveDateTime, Utc};
 use futures::Future;
 use log::{debug, error};
+use regex::Regex;
 
 use crate::{
     calendar::store::CalendarEvent,
@@ -64,7 +65,9 @@ impl CalendarWatcher {
                                     cal_event.location = value.to_string();
                                 }
                                 "DESCRIPTION" => {
-                                    cal_event.description = value.to_string();
+                                    let re = Regex::new(r"\(Exported\s\:\d{2}\/\d{2}\/\d{4}\s\d{2}\:\d{2}\)").unwrap();
+
+                                    cal_event.description = re.replace_all(value, "").to_string();
                                 }
                                 "LAST-MODIFIED" => {
                                     debug!("Parsing LAST-MODIFIED: {}", value);
