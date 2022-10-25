@@ -126,14 +126,14 @@ async fn main() -> Result<(), anyhow::Error> {
                             ChannelId(1034359605771386941).send_message(&f0, |f| {
                                 match update {
                                     calendar::store::UpdateResult::Created(main) => {
-                                        f.content(format!("Evènement in {} ajouté: {}", name, main.uid))
+                                        f.content(format!("Evènement in {} ajouté: {:?}", name, main))
                                     },
                                     calendar::store::UpdateResult::Updated { old, new } => {
 
-                                        f.content(format!("Evènement in {} modifié: {} # {}", name, old.uid, new.uid))
+                                        f.content(format!("Evènement in {} modifié: {:?} => {:?}", name, old, new))
                                     },
                                     calendar::store::UpdateResult::Removed(main) =>{
-                                        f.content(format!("Evènement in {} supprimé: {}", name, main.uid))
+                                        f.content(format!("Evènement in {} supprimé: {:?}", name, main))
                                     },
                                 }
                             }).await.expect("failed to send message");
