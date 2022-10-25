@@ -36,7 +36,7 @@ pub async fn groups(ctx: Context<'_>) -> Result<(), Error> {
         response += &format!("\t**\\* {}**", name);
     }
 
-    ctx.send(|f| f.content(response)).await?;
+    ctx.send(|f| f.ephemeral(true).content(response)).await?;
     Ok(())
 }
 
@@ -116,9 +116,13 @@ pub async fn summary(
                         "<t:{}> à <t:{}>\n`{}`",
                         event.start.timestamp(),
                         event.end.timestamp(),
-                        event.description.replace("\\n", "\n")
-                    ))
-                    .field("Emplacement", &event.location, true)
+                        event.description.replace("\\n", " ")
+                    ));
+
+                if event.location.len() > 0 {
+                    e.field("Emplacement", &event.location, true);
+                }
+                e
             });
         }
 
