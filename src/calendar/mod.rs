@@ -69,16 +69,6 @@ impl CalendarWatcher {
 
                                     cal_event.description = re.replace_all(value, "").trim().to_string();
                                 }
-                                "LAST-MODIFIED" => {
-                                    debug!("Parsing LAST-MODIFIED: {}", value);
-                                    cal_event.last_modified =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
-                                }
-                                "CREATED" => {
-                                    debug!("Parsing CREATED: {}", value);
-                                    cal_event.created =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
-                                }
                                 "UID" => {
                                     cal_event.uid = value.to_string();
                                 }

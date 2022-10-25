@@ -108,7 +108,7 @@ pub async fn summary(
             f.embed(|e| {
                 e.title(&event.summary)
                     .color(Color::from_rgb(
-                        (event.last_modified.timestamp() % 255).try_into().unwrap(),
+                        (event.end.timestamp() % 255).try_into().unwrap(),
                         (event.end.timestamp() % 255).try_into().unwrap(),
                         (event.start.timestamp() % 255).try_into().unwrap(),
                     ))
@@ -119,11 +119,6 @@ pub async fn summary(
                         event.description.replace("\\n", "\n")
                     ))
                     .field("Emplacement", &event.location, true)
-                    .field(
-                        "Dernière modification",
-                        format!("<t:{}>", event.last_modified.timestamp()),
-                        true,
-                    )
             });
         }
 

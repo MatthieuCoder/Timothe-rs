@@ -35,10 +35,6 @@ pub struct CalendarEvent {
     pub location: String,
     /// Description of the event.
     pub description: String,
-    /// Last modification of the event.
-    pub last_modified: NaiveDateTime,
-    /// Creation date of the event.
-    pub created: NaiveDateTime,
     /// Unique id of the event.
     pub uid: String,
 }
@@ -265,8 +261,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(60, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "000".to_string(),
             },
             CalendarEvent {
@@ -275,8 +269,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(120, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "002".to_string(),
             },
         ];
@@ -306,8 +298,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(60, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "000".to_string(),
             },
             CalendarEvent {
@@ -316,8 +306,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(120, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "002".to_string(),
             },
         ];
@@ -338,8 +326,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(60, 0),
                 location: "".to_string(),
                 description: "this is updated".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "000".to_string(),
             },
             CalendarEvent {
@@ -348,8 +334,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(120, 0),
                 location: "".to_string(),
                 description: "this is updated".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "002".to_string(),
             },
         ];
@@ -386,8 +370,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(60, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "000".to_string(),
             },
             CalendarEvent {
@@ -396,8 +378,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(120, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "002".to_string(),
             },
             CalendarEvent {
@@ -406,8 +386,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(180, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "003".to_string(),
             },
         ];
@@ -445,8 +423,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(60, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "000".to_string(),
             },
             CalendarEvent {
@@ -455,8 +431,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(120, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "002".to_string(),
             },
             CalendarEvent {
@@ -465,8 +439,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(180, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "003".to_string(),
             },
         ];
@@ -481,8 +453,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(60, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "000".to_string(),
             },
             CalendarEvent {
@@ -491,8 +461,6 @@ mod test {
                 end: NaiveDateTime::from_timestamp(180, 0),
                 location: "".to_string(),
                 description: "".to_string(),
-                last_modified: NaiveDateTime::from_timestamp(0, 0),
-                created: NaiveDateTime::from_timestamp(0, 0),
                 uid: "003".to_string(),
             },
         ];
