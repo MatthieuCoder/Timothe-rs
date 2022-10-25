@@ -65,7 +65,7 @@ impl CalendarWatcher {
                                     cal_event.location = value.to_string();
                                 }
                                 "DESCRIPTION" => {
-                                    let re = Regex::new(r"\(Exported\s.\d{2}\/\d{2}\/\d{4}\s\d{2}\:\d{2}\)").unwrap();
+                                    let re = Regex::new(r"\(Exported\s:\d{2}/\d{2}/\d{4}\s\d{2}:\d{2}\)").unwrap();
 
                                     cal_event.description = re.replace_all(value, "").to_string();
                                 }
