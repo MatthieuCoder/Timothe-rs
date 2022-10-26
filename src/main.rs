@@ -91,7 +91,7 @@ async fn main() -> Result<(), anyhow::Error> {
         })
         .options(options)
         .intents(
-            serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT,
+            serenity::GatewayIntents::non_privileged(),
         )
         .build()
         .await
@@ -102,6 +102,7 @@ async fn main() -> Result<(), anyhow::Error> {
         // update calendars at the start to ensure availability.
         let mut wat = w1.write().await;
         wat.update_calendars().await?;
+        // force unlock of the lock guard
         drop(wat);
 
         loop {
