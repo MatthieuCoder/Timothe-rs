@@ -4,7 +4,6 @@ use anyhow::{bail, Context};
 use calendar::CalendarWatcher;
 use chrono::Utc;
 use config::{Config, Environment, File};
-use futures::future::select;
 use handler::Data;
 use log::{error, info};
 use poise::serenity_prelude::{self as serenity};
@@ -58,7 +57,7 @@ async fn main() -> Result<(), anyhow::Error> {
         Err(e) => bail!("failed to parse the cron expression: {}", e),
     });
 
-    let (shutdown_send, mut shutdown_recv) = tokio::sync::broadcast::channel(1);
+    let (shutdown_send, _shutdown_recv) = tokio::sync::broadcast::channel(1);
 
     let options = poise::FrameworkOptions {
         commands: vec![
@@ -97,7 +96,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .build()
         .await
         .context("failed to create framework")?;
-
+    
+    let mut shutdown = shutdown_send.subscribe();
     let watcher: tokio::task::JoinHandle<Result<(), anyhow::Error>> = tokio::spawn(async move {
         // update calendars at the start to ensure availability.
         let mut wat = w1.write().await;
@@ -127,21 +127,27 @@ async fn main() -> Result<(), anyhow::Error> {
                     let mut wat = w1.write().await;
                     let _updates = wat.update_calendars().await?;
                 },
-                _ = shutdown_recv.recv() => {
+                _ = shutdown.recv() => {
                     return Ok(());
                 }
             }
         }
     });
 
+    let mut shutdown = shutdown_send.subscribe();
     let discord = tokio::spawn(async move {
-        framework
-            .start_autosharded()
-            .await
-            .context("failed to start discord bot")
+        let task = framework
+            .start_autosharded();
+
+        tokio::select! {
+            result = task => { result },
+            _ = shutdown.recv() => {
+                Ok(())
+            }
+        }
     });
 
-    tokio::spawn(async move {
+    let stop = tokio::spawn(async move {
         match signal::ctrl_c().await {
             Ok(()) => {
                 shutdown_send
@@ -156,12 +162,11 @@ async fn main() -> Result<(), anyhow::Error> {
         Ok(())
     });
 
-    let task = match select(discord, watcher).await {
-        futures::future::Either::Left(r) => r.0?,
-        futures::future::Either::Right(r) => r.0?,
-    };
+    stop.await??;
+    discord.await??;
+    watcher.await??;
+    // stoping sequence
 
-    task?;
 
     Ok(())
 }

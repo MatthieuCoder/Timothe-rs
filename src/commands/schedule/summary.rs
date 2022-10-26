@@ -114,7 +114,7 @@ pub async fn summary(
                     event.start.time().hour()
                 );
 
-                let h = (event.start.date().day() as f64 * 2345f64) % 360 as f64;
+                let h = ((event.start.date().day() / 31) as f64) % 360f64;
                 let v = (event.start.time().hour() as f64) / 14f64;
 
                 debug!("h: {}, v: {}", h, v);
