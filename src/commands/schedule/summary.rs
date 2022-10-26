@@ -7,7 +7,7 @@ use poise::serenity_prelude::Color;
 use crate::handler::{Context as HandlerContext, Error};
 
 /// Convert a hsl color to rgb; This is used to make the color gradients
-fn hsv_to_rgb(h: u32, s: f64, l: f64) -> Color {
+fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
     let c = (1f64 - (2f64 * l - 1f64).abs()) * s;
     let x = c * (1f64 - (((h / 60) % 2) as f64 - 1f64));
     let m = l - c / 2f64;
@@ -114,12 +114,12 @@ pub async fn summary(
                     event.start.time().hour()
                 );
 
-                let h = (event.start.date().day() as f64 * 1000f64) % 365 as f64;
+                let h = (event.start.date().day() as f64 * 2345f64) % 360 as f64;
                 let v = (event.start.time().hour() as f64) / 14f64;
 
                 debug!("h: {}, v: {}", h, v);
 
-                let color = hsv_to_rgb(h as u32, 1f64, 1f64 - v);
+                let color = hsl_to_rgb(h as u32, 1f64, 1f64 - v);
 
                 e.title(&event.summary).color(color).description(format!(
                     "<t:{}> à <t:{}>\n`{}`",
