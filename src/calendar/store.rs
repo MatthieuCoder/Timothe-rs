@@ -124,8 +124,6 @@ impl Calendar {
 
         let mut updates = vec![];
 
-        // todo: optimize by using a single loop
-
         // for each event we want to add
         for (_, new) in &tree_index {
             // if the event already exists, we want to update the event and emit an event

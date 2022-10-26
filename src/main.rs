@@ -28,6 +28,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, handler::Error>) {
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
         poise::FrameworkError::Command { error, ctx } => {
+            let _ = ctx.send(|f| f.ephemeral(true).content(format!("{:?}", error))).await;
             error!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
         error => {
