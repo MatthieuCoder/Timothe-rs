@@ -22,7 +22,7 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
         (0f64, x, c)
     } else if h < 300 {
         (x, 0f64, c)
-    } else if h < 360 {
+    } else if h <= 360 {
         (c, 0f64, x)
     } else {
         unreachable!()
@@ -97,7 +97,6 @@ pub async fn summary(
     #[autocomplete = "autocomplete_schedule"]
     schedule: Option<String>,
 ) -> Result<(), Error> {
-    debug!("entering summary command");
     let data = ctx.data();
     let user_roles = &ctx.author_member().await.unwrap().roles;
 
@@ -150,12 +149,12 @@ pub async fn summary(
                     event.start.time().hour()
                 );
 
-                let h = ((event.start.date().day() / 31) as f64) % 360f64;
+                let h = ((event.start.date().day() % 3) as f64 / 3f64) * 360f64;
                 let l = (event.start.time().hour() as f64) / 14f64;
 
                 debug!("h: {}, l: {}", h, l);
 
-                let color = hsl_to_rgb(h as u32, 1f64, 1f64 - l);
+                let color = hsl_to_rgb(h as u32, 0.75f64, 1f64 - l);
 
                 e.title(&event.summary).color(color).description(format!(
                     "<t:{}> à <t:{}>\n`{}`",

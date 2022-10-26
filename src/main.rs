@@ -102,6 +102,7 @@ async fn main() -> Result<(), anyhow::Error> {
         // update calendars at the start to ensure availability.
         let mut wat = w1.write().await;
         wat.update_calendars().await?;
+        drop(wat);
 
         loop {
             // calculate the next cron execution and wait
