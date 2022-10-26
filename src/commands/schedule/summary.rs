@@ -115,11 +115,11 @@ pub async fn summary(
                 );
 
                 let h = ((event.start.date().day() / 31) as f64) % 360f64;
-                let v = (event.start.time().hour() as f64) / 14f64;
+                let l = (event.start.time().hour() as f64 - 8f64) / 14f64;
 
-                debug!("h: {}, v: {}", h, v);
+                debug!("h: {}, l: {}", h, l);
 
-                let color = hsl_to_rgb(h as u32, 1f64, 1f64 - v);
+                let color = hsl_to_rgb(h as u32, 1f64, 1f64 - l);
 
                 e.title(&event.summary).color(color).description(format!(
                     "<t:{}> à <t:{}>\n`{}`",
