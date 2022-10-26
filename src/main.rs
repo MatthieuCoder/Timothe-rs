@@ -28,7 +28,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, handler::Error>) {
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
         poise::FrameworkError::Command { error, ctx } => {
-            error!("Error in command `{}`: {:?}", ctx.command().name, error,);
+            error!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
         error => {
             if let Err(e) = poise::builtins::on_error(error).await {
@@ -63,7 +63,7 @@ async fn main() -> Result<(), anyhow::Error> {
         commands: vec![
             commands::register(),
             commands::help(),
-            commands::schedule::root(),
+            commands::schedule::summary::root(),
         ],
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: None,
@@ -165,8 +165,6 @@ async fn main() -> Result<(), anyhow::Error> {
     stop.await??;
     discord.await??;
     watcher.await??;
-    // stoping sequence
-
 
     Ok(())
 }

@@ -35,6 +35,41 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
     )
 }
 
+
+#[poise::command(
+    slash_command,
+    rename = "schedule",
+    name_localized("en-US", "schedule"),
+    description_localized("en-US", "Command used to manage the schedules"),
+    subcommands("summary", "groups")
+)]
+pub async fn root(_: HandlerContext<'_>) -> Result<(), Error> {
+    unreachable!();
+}
+
+#[poise::command(slash_command)]
+/// Liste les groupes de l'utilisateur
+pub async fn groups(ctx: HandlerContext<'_>) -> Result<(), Error> {
+    let sch = ctx.data();
+    let user_roles = &ctx.author_member().await.unwrap().roles;
+
+    let user_calendars = sch
+        .config
+        .calendar
+        .calendars
+        .iter()
+        .filter(|watcher| user_roles.iter().any(|f| watcher.1.role.contains(f)));
+
+    let mut response = format!("**Vous faites partie des groupes: **\n\n");
+
+    for (name, _) in user_calendars {
+        response += &format!("\t**\\* {}**", name);
+    }
+
+    ctx.send(|f| f.ephemeral(true).content(response)).await?;
+    Ok(())
+}
+
 async fn autocomplete_schedule<'a>(
     ctx: HandlerContext<'_>,
     partial: &'a str,
@@ -62,6 +97,7 @@ pub async fn summary(
     #[autocomplete = "autocomplete_schedule"]
     schedule: Option<String>,
 ) -> Result<(), Error> {
+    debug!("entering summary command");
     let data = ctx.data();
     let user_roles = &ctx.author_member().await.unwrap().roles;
 
@@ -115,7 +151,7 @@ pub async fn summary(
                 );
 
                 let h = ((event.start.date().day() / 31) as f64) % 360f64;
-                let l = (event.start.time().hour() as f64 - 8f64) / 14f64;
+                let l = (event.start.time().hour() as f64) / 14f64;
 
                 debug!("h: {}, l: {}", h, l);
 
