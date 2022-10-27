@@ -7,12 +7,9 @@ use futures::Future;
 use log::{debug, error};
 use regex::Regex;
 
-use crate::{
-    calendar::store::CalendarEvent,
-    cfg::{CalendarItem, Config},
-};
+use crate::cfg::{CalendarItem, Config};
 
-use super::store::{Store, UpdateResult};
+use super::{calendar::{Store}, CalendarEvent, UpdateResult};
 
 pub struct CalendarManager {
     config: Arc<Config>,
@@ -93,7 +90,13 @@ impl CalendarManager {
     fn tasks<'b>(
         config: &'b Config,
     ) -> impl Iterator<
-        Item = impl Future<Output = (String, NaiveDateTime, Result<Vec<CalendarEvent>, anyhow::Error>)> + 'b,
+        Item = impl Future<
+            Output = (
+                String,
+                NaiveDateTime,
+                Result<Vec<CalendarEvent>, anyhow::Error>,
+            ),
+        > + 'b,
     > {
         config
             .calendar
@@ -106,7 +109,9 @@ impl CalendarManager {
     }
 
     #[allow(unused)]
-    pub async fn update_calendars(&mut self) -> Result<HashMap<std::string::String, Vec<UpdateResult>>, anyhow::Error> {
+    pub async fn update_calendars(
+        &mut self,
+    ) -> Result<HashMap<std::string::String, Vec<UpdateResult>>, anyhow::Error> {
         let data = {
             let tasks = Self::tasks(&self.config);
             let data = futures_util::future::join_all(tasks).await;
@@ -123,7 +128,8 @@ impl CalendarManager {
                     calendars.insert(
                         calendar_name.clone(),
                         store
-                            .apply(calendar_name.clone(), cal, fetch_date).context("failed to update calendar")?,
+                            .apply(calendar_name.clone(), cal, fetch_date)
+                            .context("failed to update calendar")?,
                     );
                 }
                 Err(err) => {

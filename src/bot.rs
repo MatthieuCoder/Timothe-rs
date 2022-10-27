@@ -13,6 +13,7 @@ use tokio::{
     signal,
     sync::{broadcast::Sender, RwLock},
 };
+use log::error;
 
 pub type CommandContext<'a> = poise::Context<'a, Arc<Data>, anyhow::Error>;
 
@@ -25,7 +26,7 @@ pub struct Data {
 pub struct Bot {
     pub data: Arc<Data>,
     pub shutdown: Receiver<()>,
-    framework: Arc<Framework<Arc<Data>, anyhow::Error>>,
+    pub framework: Arc<Framework<Arc<Data>, anyhow::Error>>,
     shutdown_send: Sender<()>,
 }
 
@@ -46,6 +47,21 @@ async fn wait_for_stop_signal(bot: Arc<Bot>) -> Result<(), anyhow::Error> {
             }
         },
         _ = shutdown.recv() => { Ok(()) }
+    }
+}
+
+async fn on_error(error: poise::FrameworkError<'_, Arc<Data>, anyhow::Error>) {
+    match error {
+        poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
+        poise::FrameworkError::Command { error, ctx } => {
+            let _ = ctx.send(|f| f.ephemeral(true).content(format!("{:?}", error))).await;
+            error!("Error in command `{}`: {:?}", ctx.command().name, error);
+        }
+        error => {
+            if let Err(e) = poise::builtins::on_error(error).await {
+                error!("Error while handling error: {}", e)
+            }
+        }
     }
 }
 
@@ -70,7 +86,7 @@ impl Bot {
                 mention_as_prefix: true,
                 ..Default::default()
             },
-            // on_error: |error| Box::pin(on_error(error)),
+            on_error: |error| Box::pin(on_error(error)),
             ..Default::default()
         };
 
@@ -124,8 +140,8 @@ impl Bot {
         let task = tasks
             .next()
             .await
-            .expect("no tasks started, illegal state")
-            .expect("failed to join task");
+            .context("no tasks started, illegal state")?
+            .context("failed to join task")?;
 
         // when a task is finished, we must terminate all the others,
         // hence we send a signal talling all tasks to stop processing

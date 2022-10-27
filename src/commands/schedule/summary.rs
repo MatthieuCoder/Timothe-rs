@@ -1,39 +1,8 @@
 use anyhow::Context;
-use chrono::{Datelike, Duration, Timelike, Utc};
+use chrono::{Duration, Utc};
 use futures::{Stream, StreamExt};
-use log::debug;
-use poise::serenity_prelude::Color;
 
 use crate::bot::CommandContext;
-
-/// Convert a hsl color to rgb; This is used to make the color gradients
-fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
-    let c = (1f64 - (2f64 * l - 1f64).abs()) * s;
-    let x = c * (1f64 - (((h / 60) % 2) as f64 - 1f64));
-    let m = l - c / 2f64;
-
-    let (r0, g0, b0): (f64, f64, f64) = if h < 60 {
-        (c, x, 0f64)
-    } else if h < 120 {
-        (x, c, 0f64)
-    } else if h < 180 {
-        (0f64, c, x)
-    } else if h < 240 {
-        (0f64, x, c)
-    } else if h < 300 {
-        (x, 0f64, c)
-    } else if h <= 360 {
-        (c, 0f64, x)
-    } else {
-        unreachable!()
-    };
-
-    Color::from_rgb(
-        ((r0 + m) * 255f64) as u8,
-        ((g0 + m) * 255f64) as u8,
-        ((b0 + m) * 255f64) as u8,
-    )
-}
 
 #[poise::command(
     slash_command,
@@ -161,32 +130,7 @@ pub async fn summary(
         ));
 
         for event in events {
-            f.embed(|e| {
-                debug!(
-                    "day: {} hour: {}",
-                    event.start.date().day(),
-                    event.start.time().hour()
-                );
-
-                let h = ((event.start.date().day() % 3) as f64 / 3f64) * 360f64;
-                let l = (event.start.time().hour() as f64) / 14f64;
-
-                debug!("h: {}, l: {}", h, l);
-
-                let color = hsl_to_rgb(h as u32, 0.75f64, 1f64 - l);
-
-                e.title(&event.summary).color(color).description(format!(
-                    "<t:{}> à <t:{}>\n`{}`",
-                    event.start.timestamp(),
-                    event.end.timestamp(),
-                    event.description.replace("\\n", " ")
-                ));
-
-                if event.location.len() > 0 {
-                    e.field("Emplacement", &event.location, true);
-                }
-                e
-            });
+            f.embeds.push(event.as_ref().into())
         }
 
         f
