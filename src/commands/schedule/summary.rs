@@ -1,10 +1,10 @@
 use anyhow::Context;
-use chrono::{Duration, Utc, Datelike, Timelike};
+use chrono::{Datelike, Duration, Timelike, Utc};
 use futures::{Stream, StreamExt};
 use log::debug;
 use poise::serenity_prelude::Color;
 
-use crate::handler::{Context as HandlerContext, Error};
+use crate::bot::CommandContext;
 
 /// Convert a hsl color to rgb; This is used to make the color gradients
 fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
@@ -35,7 +35,6 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
     )
 }
 
-
 #[poise::command(
     slash_command,
     rename = "schedule",
@@ -43,15 +42,19 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
     description_localized("en-US", "Command used to manage the schedules"),
     subcommands("summary", "groups")
 )]
-pub async fn root(_: HandlerContext<'_>) -> Result<(), Error> {
+pub async fn root(_: CommandContext<'_>) -> Result<(), anyhow::Error> {
     unreachable!();
 }
 
 #[poise::command(slash_command, guild_only)]
 /// Liste les groupes de l'utilisateur
-pub async fn groups(ctx: HandlerContext<'_>) -> Result<(), Error> {
+pub async fn groups(ctx: CommandContext<'_>) -> Result<(), anyhow::Error> {
     let sch = ctx.data();
-    let user_roles = &ctx.author_member().await.context("This command should be run in a guild.")?.roles;
+    let user_roles = &ctx
+        .author_member()
+        .await
+        .context("This command should be run in a guild.")?
+        .roles;
 
     let user_calendars = sch
         .config
@@ -71,7 +74,7 @@ pub async fn groups(ctx: HandlerContext<'_>) -> Result<(), Error> {
 }
 
 async fn autocomplete_schedule<'a>(
-    ctx: HandlerContext<'_>,
+    ctx: CommandContext<'_>,
     partial: &'a str,
 ) -> impl Stream<Item = String> + 'a {
     let guild = ctx.guild();
@@ -84,7 +87,10 @@ async fn autocomplete_schedule<'a>(
         .iter()
         .filter(|(_, calendar)| {
             if let Some(guild) = &guild {
-                calendar.role.iter().any(|role| { guild.roles.contains_key(role) })
+                calendar
+                    .role
+                    .iter()
+                    .any(|role| guild.roles.contains_key(role))
             } else {
                 true
             }
@@ -100,12 +106,12 @@ async fn autocomplete_schedule<'a>(
 #[poise::command(slash_command)]
 /// Affiche un résumé pour les prochains jours
 pub async fn summary(
-    ctx: HandlerContext<'_>,
+    ctx: CommandContext<'_>,
 
     #[description = "L'emploi du temps à inspecter"]
     #[autocomplete = "autocomplete_schedule"]
     schedule: Option<String>,
-) -> Result<(), Error> {
+) -> Result<(), anyhow::Error> {
     let data = ctx.data();
     let member = &ctx.author_member().await;
 
@@ -114,7 +120,7 @@ pub async fn summary(
     let to = from + duration;
 
     // select all the calendars selected by the user
-    // either base on the schedules argument or by the 
+    // either base on the schedules argument or by the
     // roles of the user.
     let calendars = data.config.calendar.calendars.iter().filter(|watcher| {
         if let Some(calendar) = &schedule {
@@ -128,7 +134,7 @@ pub async fn summary(
         }
     });
 
-    let reader = data.scheduler.read().await;
+    let reader = data.calendar_manager.read().await;
 
     let events = calendars
         .map(|(name, _)| {

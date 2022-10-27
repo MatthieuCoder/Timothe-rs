@@ -1,9 +1,9 @@
-use crate::handler::{Context, Error};
+use crate::bot::CommandContext;
 
 pub mod schedule;
 
 #[poise::command(prefix_command, owners_only)]
-pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn register(ctx: CommandContext<'_>) -> Result<(), anyhow::Error> {
     poise::builtins::register_application_commands_buttons(ctx).await?;
     Ok(())
 }
@@ -11,11 +11,11 @@ pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
 /// Show this help menu
 #[poise::command(prefix_command, track_edits, slash_command)]
 pub async fn help(
-    ctx: Context<'_>,
+    ctx: CommandContext<'_>,
     #[description = "Specific command to show help about"]
     #[autocomplete = "poise::builtins::autocomplete_command"]
     command: Option<String>,
-) -> Result<(), Error> {
+) -> Result<(), anyhow::Error> {
     poise::builtins::help(
         ctx,
         command.as_deref(),

@@ -1,3 +1,4 @@
+use config::{File, Environment};
 use poise::serenity_prelude::{ChannelId, RoleId};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -56,10 +57,20 @@ pub struct StorageConfig {
 
 #[derive(Deserialize, Debug, Clone, Default)]
 /// Main configuration structure
-/// This does not have any particular meaning; It just contains 
+/// This does not have any particular meaning; It just contains
 /// all the configuration blocks.
 pub struct Config {
     pub discord: DiscordConfig,
     pub calendar: CalendarConfig,
     pub storage: StorageConfig,
+}
+
+/// Loads the configuration using the `config` crate
+pub(crate) fn load_config() -> Result<Config, anyhow::Error> {
+    let settings = ::config::Config::builder()
+        .add_source(File::with_name("config"))
+        .add_source(Environment::with_prefix("TIMOTHE"))
+        .build()?;
+
+    Ok(settings.try_deserialize()?)
 }
