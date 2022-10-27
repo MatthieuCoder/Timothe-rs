@@ -74,13 +74,22 @@ async fn autocomplete_schedule<'a>(
     ctx: HandlerContext<'_>,
     partial: &'a str,
 ) -> impl Stream<Item = String> + 'a {
+    let guild = ctx.guild();
+
     let names: Vec<String> = ctx
         .data()
         .config
         .calendar
         .calendars
-        .keys()
-        .map(|name| name.to_string())
+        .iter()
+        .filter(|(_, calendar)| {
+            if let Some(guild) = &guild {
+                calendar.role.iter().any(|role| { guild.roles.contains_key(role) })
+            } else {
+                true
+            }
+        })
+        .map(|name| name.0.to_string())
         .collect();
 
     futures::stream::iter(names)
