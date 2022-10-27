@@ -153,7 +153,7 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
 impl From<&Event> for CreateEmbed {
     fn from(event: &Event) -> Self {
         let mut f = Self::default();
-        let h = (f64::from(event.start.date().day() % 10) / 3f64) * 360f64;
+        let h = (f64::from(event.start.date().day() % 10) / 10f64) * 360f64;
         let l = f64::from(event.start.time().hour()) / 14f64;
 
         debug!("h: {}, l: {}", h, l);
