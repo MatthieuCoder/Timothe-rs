@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::Context;
 use chrono::{Datelike, NaiveDateTime, Timelike, Utc};
 use log::{debug, error, info};
-use poise::serenity_prelude::{Color, CreateEmbed};
+use poise::serenity_prelude::{Color, CreateEmbed, Http};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
@@ -175,8 +175,8 @@ impl From<&Event> for CreateEmbed {
         f
     }
 }
-async fn process_events(bot: Arc<Bot>, updates_map: HashMap<String, Vec<UpdateResult>>) {
-    let http = bot.framework.client().cache_and_http.http.clone();
+async fn process_events(bot: Arc<Bot>, updates_map: HashMap<String, Vec<UpdateResult>>, http: Arc<Http>) {
+    
     for (calendar_name, updates) in updates_map {
         let calendar = bot
             .data
@@ -216,7 +216,7 @@ async fn process_events(bot: Arc<Bot>, updates_map: HashMap<String, Vec<UpdateRe
     }
 }
 
-pub async fn manager_task(bot: Arc<Bot>) -> Result<(), anyhow::Error> {
+pub async fn manager_task(bot: Arc<Bot>, http: Arc<Http>) -> Result<(), anyhow::Error> {
     // parse the cron expression to a saffon cron expression
     let schedule = saffron::Cron::new(match bot.data.config.calendar.refetch.parse() {
         Ok(r) => Ok(r),
@@ -253,12 +253,12 @@ pub async fn manager_task(bot: Arc<Bot>) -> Result<(), anyhow::Error> {
                 .to_std()
                 .context("failed to convert a chrono duration to a std duration")?,
         );
-
         tokio::select! {
             _ = wait => {
+                
                 let updates = bot.data.calendar_manager.write().await.update_calendars().await?;
                 debug!("got updates: {:#?}", updates);
-                process_events(bot.clone(), updates).await;
+                process_events(bot.clone(), updates, http.clone()).await;
             },
             _ = shutdown.recv() => {
                 return Ok(());

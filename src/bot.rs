@@ -4,7 +4,8 @@ use anyhow::anyhow;
 use anyhow::Context;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use poise::serenity_prelude as serenity;
+use log::error;
+use poise::serenity_prelude::{self as serenity};
 use poise::Framework;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,7 +14,6 @@ use tokio::{
     signal,
     sync::{broadcast::Sender, RwLock},
 };
-use log::error;
 
 pub type CommandContext<'a> = poise::Context<'a, Arc<Data>, anyhow::Error>;
 
@@ -54,7 +54,10 @@ async fn on_error(error: poise::FrameworkError<'_, Arc<Data>, anyhow::Error>) {
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
         poise::FrameworkError::Command { error, ctx } => {
-            std::mem::drop(ctx.send(|f| f.ephemeral(true).content(format!("{:?}", error))).await);
+            std::mem::drop(
+                ctx.send(|f| f.ephemeral(true).content(format!("{:?}", error)))
+                    .await,
+            );
             error!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
         error => {
@@ -105,12 +108,18 @@ impl Bot {
             .await
             .context("failed to create framework")?;
 
-        Ok(Arc::new(Self { data, shutdown, framework, shutdown_send }))
+        Ok(Arc::new(Self {
+            data,
+            shutdown,
+            framework,
+            shutdown_send,
+        }))
     }
 
     pub async fn start(self: Arc<Self>) -> Result<(), anyhow::Error> {
         let mut shutdown = self.shutdown.resubscribe();
         let mut tasks = FuturesUnordered::new();
+        let http = self.framework.client().cache_and_http.http.clone();
 
         let this = self.clone();
         // runs the discord bot usign autosharded mode
@@ -128,7 +137,7 @@ impl Bot {
             }
         }));
 
-        tasks.push(tokio::spawn(manager_task(self.clone())));
+        tasks.push(tokio::spawn(manager_task(self.clone(), http)));
         tasks.push(tokio::spawn(wait_for_stop_signal(self.clone())));
 
         // wait for a task to finish.
