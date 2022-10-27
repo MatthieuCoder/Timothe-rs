@@ -47,11 +47,11 @@ pub async fn root(_: HandlerContext<'_>) -> Result<(), Error> {
     unreachable!();
 }
 
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 /// Liste les groupes de l'utilisateur
 pub async fn groups(ctx: HandlerContext<'_>) -> Result<(), Error> {
     let sch = ctx.data();
-    let user_roles = &ctx.author_member().await.unwrap().roles;
+    let user_roles = &ctx.author_member().await.context("This command should be run in a guild.")?.roles;
 
     let user_calendars = sch
         .config
@@ -107,7 +107,7 @@ pub async fn summary(
     schedule: Option<String>,
 ) -> Result<(), Error> {
     let data = ctx.data();
-    let user_roles = &ctx.author_member().await.unwrap().roles;
+    let member = &ctx.author_member().await;
 
     let duration = Duration::days(2);
     let from = Utc::now();
@@ -120,7 +120,11 @@ pub async fn summary(
         if let Some(calendar) = &schedule {
             calendar == watcher.0
         } else {
-            user_roles.iter().any(|f| watcher.1.role.contains(f))
+            if let Some(member) = member {
+                member.roles.iter().any(|f| watcher.1.role.contains(f))
+            } else {
+                false
+            }
         }
     });
 
@@ -141,7 +145,7 @@ pub async fn summary(
             f.append(&mut x);
             f
         })
-        .context("couldn't reduce the events")?;
+        .context("Could't find any calendar matching.")?;
 
     ctx.send(|f| {
         f.ephemeral(true).content(format!(

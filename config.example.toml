@@ -1,0 +1,15 @@
+[discord]
+token  = "<bot token>"
+prefix = "~"
+
+[calendar]
+refetch = "*/10 * * * *"
+
+[calendar.'My awesome class']
+role    = [1234567890101112134]
+source     = "https://my-awesome-ical.com/calendar.ical"
+channel = [1234567890101112134]
+time_amount = "2w"
+
+[storage]
+path = "db"

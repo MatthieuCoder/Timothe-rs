@@ -69,7 +69,7 @@ impl CalendarWatcher {
                                     let re = Regex::new(
                                         r"\(Exported\s:\d{2}/\d{2}/\d{4}\s\d{2}:\d{2}\)",
                                     )
-                                    .unwrap();
+                                    .context("failed to build regex expression")?;
 
                                     cal_event.description =
                                         re.replace_all(value, "").trim().to_string();
