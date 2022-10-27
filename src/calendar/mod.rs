@@ -2,30 +2,30 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use chrono::{Datelike, NaiveDateTime, Timelike, Utc};
-use log::{debug, info, error};
+use log::{debug, error, info};
 use poise::serenity_prelude::{Color, CreateEmbed};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use crate::bot::Bot;
 
-pub mod calendar;
+pub mod schedule;
 pub mod manager;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum UpdateResult {
-    Created(Arc<CalendarEvent>),
+    Created(Arc<Event>),
     Updated {
-        old: Arc<CalendarEvent>,
-        new: Arc<CalendarEvent>,
+        old: Arc<Event>,
+        new: Arc<Event>,
     },
-    Removed(Arc<CalendarEvent>),
+    Removed(Arc<Event>),
 }
 
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize)]
 /// This struct is stored in disk and indexed by it's uid (from ADE)
 /// We can simply diff the events using their uid.
-pub struct CalendarEvent {
+pub struct Event {
     /// Summary of the event (Title)
     pub summary: String,
     /// Start of the event. (Utc aligned according to the iCalendar spec)
@@ -40,26 +40,26 @@ pub struct CalendarEvent {
     pub uid: String,
 }
 
-impl Into<CreateEmbed> for &UpdateResult {
-    fn into(self) -> CreateEmbed {
-        let mut f = CreateEmbed::default();
+impl From<&UpdateResult> for CreateEmbed {
+    fn from(event: &UpdateResult) -> Self {
+        let mut f = Self::default();
 
-        f.color(match self {
+        f.color(match event {
             UpdateResult::Created(_) => Color::DARK_GREEN,
             UpdateResult::Updated { .. } => Color::BLUE,
             UpdateResult::Removed(_) => Color::RED,
         })
-        .title(match &self {
+        .title(match &event {
             UpdateResult::Created(event) | UpdateResult::Removed(event) => event.summary.clone(),
             UpdateResult::Updated { old, new } => {
-                if old.summary != new.summary {
-                    format!("{} => {}", old.summary, new.summary)
-                } else {
+                if old.summary == new.summary {
                     new.summary.clone()
+                } else {
+                    format!("{} => {}", old.summary, new.summary)
                 }
             }
         })
-        .description(match &self {
+        .description(match &event {
             UpdateResult::Created(event) | UpdateResult::Removed(event) => format!(
                 "<t:{}> à <t:{}>\n`{}`",
                 event.start.timestamp(),
@@ -84,27 +84,27 @@ impl Into<CreateEmbed> for &UpdateResult {
                             new.end.timestamp()
                         )
                     },
-                    if old.description != new.description {
+                    if old.description == new.description {
+                        format!("`{}`", new.description.replace("\\n", ""))
+                    } else {
                         format!(
                             "`{}` => `{}`",
                             old.description.replace("\\n", ""),
                             new.description.replace("\\n", "")
                         )
-                    } else {
-                        format!("`{}`", new.description.replace("\\n", ""))
                     }
                 )
             }
         });
 
-        match self {
+        match event {
             UpdateResult::Created(event) | UpdateResult::Removed(event) => {
-                if event.location.len() > 0 {
+                if !event.location.is_empty() {
                     f.field("Emplacement", &event.location, true);
                 }
             }
             UpdateResult::Updated { old, new } => {
-                if old.location.len() > 0 || new.location.len() > 0 {
+                if !old.location.is_empty() || !new.location.is_empty() {
                     f.field(
                         "Emplacement",
                         format!("`{}` => `{}`", old.location, new.location),
@@ -119,9 +119,12 @@ impl Into<CreateEmbed> for &UpdateResult {
 }
 
 /// Convert a hsl color to rgb; This is used to make the color gradients
+#[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::many_single_char_names)]
 fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
     let c = (1f64 - (2f64 * l - 1f64).abs()) * s;
-    let x = c * (1f64 - (((h / 60) % 2) as f64 - 1f64));
+    let x = c * (1f64 - (f64::from((h / 60) % 2) - 1f64));
     let m = l - c / 2f64;
 
     let (r0, g0, b0): (f64, f64, f64) = if h < 60 {
@@ -147,25 +150,27 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
     )
 }
 
-impl Into<CreateEmbed> for &CalendarEvent {
-    fn into(self) -> CreateEmbed {
-        let mut f = CreateEmbed::default();
-        let h = ((self.start.date().day() % 10) as f64 / 3f64) * 360f64;
-        let l = (self.start.time().hour() as f64) / 14f64;
+impl From<&Event> for CreateEmbed {
+    fn from(event: &Event) -> Self {
+        let mut f = Self::default();
+        let h = (f64::from(event.start.date().day() % 10) / 3f64) * 360f64;
+        let l = f64::from(event.start.time().hour()) / 14f64;
 
         debug!("h: {}, l: {}", h, l);
-
+        
+        #[allow(clippy::cast_sign_loss)]
+        #[allow(clippy::cast_possible_truncation)]
         let color = hsl_to_rgb(h as u32, 0.75f64, 1f64 - l);
 
-        f.title(&self.summary).color(color).description(format!(
+        f.title(&event.summary).color(color).description(format!(
             "<t:{}> à <t:{}>\n`{}`",
-            self.start.timestamp(),
-            self.end.timestamp(),
-            self.description.replace("\\n", " ")
+            event.start.timestamp(),
+            event.end.timestamp(),
+            event.description.replace("\\n", " ")
         ));
 
-        if self.location.len() > 0 {
-            f.field("Emplacement", &self.location, true);
+        if !event.location.is_empty() {
+            f.field("Emplacement", &event.location, true);
         }
         f
     }
@@ -191,12 +196,20 @@ async fn process_events(bot: Arc<Bot>, updates_map: HashMap<String, Vec<UpdateRe
 
             for chunk in chunks {
                 let chunk = chunk.to_vec();
-                match channel.send_message(http.clone(), |f| {
-                    f.set_embeds(chunk);
-                    f
-                }).await {
-                    Ok(_) => { info!("sent message for updates!") },
-                    Err(err) => error!("failed to send to the channel {} for {}: {}", channel, calendar_name, err),
+                match channel
+                    .send_message(http.clone(), |f| {
+                        f.set_embeds(chunk);
+                        f
+                    })
+                    .await
+                {
+                    Ok(_) => {
+                        info!("sent message for updates!");
+                    }
+                    Err(err) => error!(
+                        "failed to send to the channel {} for {}: {}",
+                        channel, calendar_name, err
+                    ),
                 };
             }
         }

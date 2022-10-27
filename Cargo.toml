@@ -2,6 +2,12 @@
 name = "timothe-rs"
 version = "0.1.2"
 edition = "2021"
+license_file = "LICENSE"
+license = "AGPL"
+repository = "https://github.com/MatthieuCoder/Timothe-rs"
+description = "Simple discord bot that tracks ics schedules"
+keywords =  ["bot", "edt", "schedule", "tracking", "events", "school"]
+categories = ["bot"]
 
 [dependencies]
 tokio = { version = "1.21.2", features = ["full"] }

@@ -1,9 +1,11 @@
 use anyhow::Context;
 use chrono::{Duration, Utc};
 use futures::{Stream, StreamExt};
+use std::fmt::Write;
 
 use crate::bot::CommandContext;
 
+#[allow(clippy::unused_async)]
 #[poise::command(
     slash_command,
     rename = "schedule",
@@ -32,16 +34,17 @@ pub async fn groups(ctx: CommandContext<'_>) -> Result<(), anyhow::Error> {
         .iter()
         .filter(|watcher| user_roles.iter().any(|f| watcher.1.role.contains(f)));
 
-    let mut response = format!("**Vous faites partie des groupes: **\n\n");
+    let mut response = "**Vous faites partie des groupes: **\n\n".to_string();
 
     for (name, _) in user_calendars {
-        response += &format!("\t**\\* {}**", name);
+        write!(response, "\t**\\* {}**", name)?;
     }
 
     ctx.send(|f| f.ephemeral(true).content(response)).await?;
     Ok(())
 }
 
+#[allow(clippy::unused_async)]
 async fn autocomplete_schedule<'a>(
     ctx: CommandContext<'_>,
     partial: &'a str,
@@ -55,21 +58,19 @@ async fn autocomplete_schedule<'a>(
         .calendars
         .iter()
         .filter(|(_, calendar)| {
-            if let Some(guild) = &guild {
+            guild.as_ref().map_or(true, |guild| {
                 calendar
                     .role
                     .iter()
                     .any(|role| guild.roles.contains_key(role))
-            } else {
-                true
-            }
+            })
         })
         .map(|name| name.0.to_string())
         .collect();
 
     futures::stream::iter(names)
         .filter(move |name| futures::future::ready(name.starts_with(partial)))
-        .map(|name| name.to_string())
+        .map(|name| name)
 }
 
 #[poise::command(slash_command)]
@@ -92,15 +93,14 @@ pub async fn summary(
     // either base on the schedules argument or by the
     // roles of the user.
     let calendars = data.config.calendar.calendars.iter().filter(|watcher| {
-        if let Some(calendar) = &schedule {
-            calendar == watcher.0
-        } else {
-            if let Some(member) = member {
-                member.roles.iter().any(|f| watcher.1.role.contains(f))
-            } else {
-                false
-            }
-        }
+        schedule.as_ref().map_or_else(
+            || {
+                member.as_ref().map_or(false, |member| {
+                    member.roles.iter().any(|f| watcher.1.role.contains(f))
+                })
+            },
+            |calendar| calendar == watcher.0,
+        )
     });
 
     let reader = data.calendar_manager.read().await;
@@ -112,7 +112,7 @@ pub async fn summary(
 
             Some(events)
         })
-        .filter(|elem| elem.is_some())
+        .filter(std::option::Option::is_some)
         // this is just to have the right type in the reduce function
         // this is safe because we checked if all the members of the iterator are something
         .map(|elem| elem.expect("internal error"))
@@ -130,7 +130,7 @@ pub async fn summary(
         ));
 
         for event in events {
-            f.embeds.push(event.as_ref().into())
+            f.embeds.push(event.as_ref().into());
         }
 
         f

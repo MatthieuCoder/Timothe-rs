@@ -13,7 +13,7 @@ pub struct DiscordConfig {
 #[derive(Deserialize, Debug, Clone, Default)]
 /// A calendar item is simply a calendar watched by the bot
 /// this includes links such as the source (url) the discord channel,
-/// roles and fetch_time.
+/// roles and `fetch_time`.
 /// Check each field for the documentation and usages.
 pub struct CalendarItem {
     /// The source url of the calendar.
@@ -66,7 +66,7 @@ pub struct Config {
 }
 
 /// Loads the configuration using the `config` crate
-pub(crate) fn load_config() -> Result<Config, anyhow::Error> {
+pub fn load_config() -> Result<Config, anyhow::Error> {
     let settings = ::config::Config::builder()
         .add_source(File::with_name("config"))
         .add_source(Environment::with_prefix("TIMOTHE"))

@@ -1,5 +1,5 @@
 use crate::calendar::manager_task;
-use crate::{calendar::manager::CalendarManager, cfg::Config, commands};
+use crate::{calendar::manager::Manager, cfg::Config, commands};
 use anyhow::anyhow;
 use anyhow::Context;
 use futures::stream::FuturesUnordered;
@@ -20,7 +20,7 @@ pub type CommandContext<'a> = poise::Context<'a, Arc<Data>, anyhow::Error>;
 // User data, which is stored and accessible in all command invocations
 pub struct Data {
     pub config: Arc<Config>,
-    pub calendar_manager: Arc<RwLock<CalendarManager>>,
+    pub calendar_manager: Arc<RwLock<Manager>>,
 }
 
 pub struct Bot {
@@ -30,7 +30,7 @@ pub struct Bot {
     shutdown_send: Sender<()>,
 }
 
-/// Sends a message through shutdown_send when a stop signal is detected.
+/// Sends a message through `shutdown_send` when a stop signal is detected.
 /// Used to start the bot stop sequence.
 async fn wait_for_stop_signal(bot: Arc<Bot>) -> Result<(), anyhow::Error> {
     let mut shutdown = bot.shutdown.resubscribe();
@@ -54,12 +54,12 @@ async fn on_error(error: poise::FrameworkError<'_, Arc<Data>, anyhow::Error>) {
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
         poise::FrameworkError::Command { error, ctx } => {
-            let _ = ctx.send(|f| f.ephemeral(true).content(format!("{:?}", error))).await;
+            std::mem::drop(ctx.send(|f| f.ephemeral(true).content(format!("{:?}", error))).await);
             error!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
         error => {
             if let Err(e) = poise::builtins::on_error(error).await {
-                error!("Error while handling error: {}", e)
+                error!("Error while handling error: {}", e);
             }
         }
     }
@@ -72,7 +72,7 @@ impl Bot {
         let (shutdown_send, shutdown) = tokio::sync::broadcast::channel(1);
 
         // initialize the calenar manager
-        let calendar_manager = Arc::new(RwLock::new(CalendarManager::new(config.clone())?));
+        let calendar_manager = Arc::new(RwLock::new(Manager::new(config.clone())?));
 
         let options = poise::FrameworkOptions {
             commands: vec![
@@ -105,12 +105,7 @@ impl Bot {
             .await
             .context("failed to create framework")?;
 
-        Ok(Arc::new(Self {
-            shutdown,
-            data,
-            framework,
-            shutdown_send,
-        }))
+        Ok(Arc::new(Self { data, shutdown, framework, shutdown_send }))
     }
 
     pub async fn start(self: Arc<Self>) -> Result<(), anyhow::Error> {

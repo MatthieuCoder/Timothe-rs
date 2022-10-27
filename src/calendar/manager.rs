@@ -9,14 +9,14 @@ use regex::Regex;
 
 use crate::cfg::{CalendarItem, Config};
 
-use super::{calendar::{Store}, CalendarEvent, UpdateResult};
+use super::{schedule::Store, Event, UpdateResult};
 
-pub struct CalendarManager {
+pub struct Manager {
     config: Arc<Config>,
     pub store: Store,
 }
 
-impl CalendarManager {
+impl Manager {
     pub fn new(config: Arc<Config>) -> Result<Self, anyhow::Error> {
         Ok(Self {
             config: config.clone(),
@@ -25,7 +25,7 @@ impl CalendarManager {
     }
 
     #[inline]
-    async fn fetch_task(watch_item: &CalendarItem) -> Result<Vec<CalendarEvent>, anyhow::Error> {
+    async fn fetch_task(watch_item: &CalendarItem) -> Result<Vec<Event>, anyhow::Error> {
         let data = reqwest::get(&watch_item.source)
             .await?
             .bytes()
@@ -35,51 +35,46 @@ impl CalendarManager {
         let parser = ical::IcalParser::new(data);
         let mut events = Vec::new();
 
-        for cal in parser {
-            if let Ok(calendar) = cal {
-                for event in calendar.events {
-                    let mut cal_event: CalendarEvent = CalendarEvent::default();
+        for calendar in parser.flatten() {
+            for event in calendar.events {
+                let mut cal_event: Event = Event::default();
 
-                    for property in &event.properties {
-                        if let Some(value) = &property.value {
-                            match &property.name as &str {
-                                "DTSTART" => {
-                                    debug!("Parsing DTSTART: {}", value);
-                                    cal_event.start =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
-                                }
-                                "DTEND" => {
-                                    debug!("Parsing DTEND: {}", value);
-                                    cal_event.end =
-                                        NaiveDateTime::parse_from_str(&value, "%Y%m%dT%H%M%SZ")?;
-                                }
-                                "SUMMARY" => {
-                                    cal_event.summary = value.to_string();
-                                }
-                                "LOCATION" => {
-                                    cal_event.location = value.to_string();
-                                }
-                                "DESCRIPTION" => {
-                                    let re = Regex::new(
-                                        r"\(Exported\s:\d{2}/\d{2}/\d{4}\s\d{2}:\d{2}\)",
-                                    )
-                                    .context("failed to build regex expression")?;
-
-                                    cal_event.description =
-                                        re.replace_all(value, "").trim().to_string();
-                                }
-                                "UID" => {
-                                    cal_event.uid = value.to_string();
-                                }
-                                &_ => {}
+                for property in &event.properties {
+                    if let Some(value) = &property.value {
+                        match &property.name as &str {
+                            "DTSTART" => {
+                                debug!("Parsing DTSTART: {}", value);
+                                cal_event.start =
+                                    NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?;
                             }
+                            "DTEND" => {
+                                debug!("Parsing DTEND: {}", value);
+                                cal_event.end =
+                                    NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?;
+                            }
+                            "SUMMARY" => {
+                                cal_event.summary = value.to_string();
+                            }
+                            "LOCATION" => {
+                                cal_event.location = value.to_string();
+                            }
+                            "DESCRIPTION" => {
+                                let re =
+                                    Regex::new(r"\(Exported\s:\d{2}/\d{2}/\d{4}\s\d{2}:\d{2}\)")
+                                        .context("failed to build regex expression")?;
+
+                                cal_event.description =
+                                    re.replace_all(value, "").trim().to_string();
+                            }
+                            "UID" => {
+                                cal_event.uid = value.to_string();
+                            }
+                            &_ => {}
                         }
                     }
-
-                    events.push(cal_event);
                 }
-            } else {
-                continue;
+
+                events.push(cal_event);
             }
         }
 
@@ -87,16 +82,16 @@ impl CalendarManager {
     }
 
     #[inline]
-    fn tasks<'b>(
-        config: &'b Config,
+    fn tasks(
+        config: &Config,
     ) -> impl Iterator<
         Item = impl Future<
             Output = (
                 String,
                 NaiveDateTime,
-                Result<Vec<CalendarEvent>, anyhow::Error>,
+                Result<Vec<Event>, anyhow::Error>,
             ),
-        > + 'b,
+        > + '_,
     > {
         config
             .calendar
@@ -128,7 +123,7 @@ impl CalendarManager {
                     calendars.insert(
                         calendar_name.clone(),
                         store
-                            .apply(calendar_name.clone(), cal, fetch_date)
+                            .apply(&calendar_name, cal, fetch_date)
                             .context("failed to update calendar")?,
                     );
                 }

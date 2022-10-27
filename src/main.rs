@@ -1,3 +1,11 @@
+
+ #![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+)]
+
 use std::sync::Arc;
 
 use bot::Bot;
