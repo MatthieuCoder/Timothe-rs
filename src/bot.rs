@@ -115,7 +115,6 @@ impl Bot {
             shutdown_send,
         }))
     }
-
     pub async fn start(self: Arc<Self>) -> Result<(), anyhow::Error> {
         let mut shutdown = self.shutdown.resubscribe();
         let mut tasks = FuturesUnordered::new();
