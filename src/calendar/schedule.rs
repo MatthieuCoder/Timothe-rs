@@ -157,7 +157,7 @@ impl Calendar {
                 let old = self
                     .uid_index
                     .remove(&event.uid)
-                    .context("should happen. the keys wasn't in the hashmap")?;
+                    .context("should happen. the key wasn't in the hashmap")?;
 
                 updates.push(UpdateResult::Removed(old));
             }

@@ -26,11 +26,11 @@ impl Manager {
 
     #[inline]
     async fn fetch_task(watch_item: &CalendarItem) -> Result<Vec<Event>, anyhow::Error> {
-        let data = reqwest::get(&watch_item.source)
+        let response = reqwest::get(&watch_item.source)
             .await?
-            .bytes()
-            .await?
-            .reader();
+            .error_for_status()?;
+
+        let data = response.bytes().await?.reader();
 
         let parser = ical::IcalParser::new(data);
         let mut events = Vec::new();
