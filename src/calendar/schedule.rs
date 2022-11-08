@@ -112,7 +112,8 @@ impl Calendar {
                     // update the uid index
                     *existing = new.clone();
                     // update in the tree
-                    self.tree.insert(existing.start, new.clone());
+                    self.tree.insert(new.start, new.clone());
+                    self.tree.remove(&existing.start);
 
                     // emit the event
                     updates.push(UpdateResult::Updated {
