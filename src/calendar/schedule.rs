@@ -108,12 +108,11 @@ impl Calendar {
                 // if the event is different, we want to update it
                 if existing != new {
                     let old = existing.clone();
-
                     // update the uid index
                     *existing = new.clone();
                     // update in the tree
                     self.tree.insert(new.start, new.clone());
-                    self.tree.remove(&existing.start);
+                    self.tree.remove(&old.start);
 
                     // emit the event
                     updates.push(UpdateResult::Updated {
@@ -305,6 +304,7 @@ mod test {
             role: vec![RoleId(0)],
             time_amount: "2w".to_string(),
         };
+
         let test_events = vec![
             Event {
                 summary: "test event1".to_string(),
@@ -350,7 +350,7 @@ mod test {
             },
             Event {
                 summary: "test event1".to_string(),
-                start: NaiveDateTime::from_timestamp(60, 0),
+                start: NaiveDateTime::from_timestamp(65, 0),
                 end: NaiveDateTime::from_timestamp(120, 0),
                 location: "".to_string(),
                 description: "this is updated".to_string(),
