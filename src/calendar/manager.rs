@@ -60,7 +60,7 @@ impl Manager {
                             }
                             "DESCRIPTION" => {
                                 let re =
-                                    Regex::new(r"\(Exported\s?:\s?\d{2}/\d{2}/\d{4}\s?\d{2}:\d{2}\)")
+                                    Regex::new(r"\(.*\)")
                                         .context("failed to build regex expression")?;
 
                                 cal_event.description =
