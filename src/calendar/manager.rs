@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use bytes::Buf;
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use futures::Future;
 use log::{debug, error};
 use regex::Regex;
@@ -45,12 +45,12 @@ impl Manager {
                             "DTSTART" => {
                                 debug!("Parsing DTSTART: {}", value);
                                 cal_event.start =
-                                    NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?;
+                                    DateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?.to_utc();
                             }
                             "DTEND" => {
                                 debug!("Parsing DTEND: {}", value);
                                 cal_event.end =
-                                    NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?;
+                                    DateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?.to_utc();
                             }
                             "SUMMARY" => {
                                 cal_event.summary = value.trim().to_string();
@@ -88,7 +88,7 @@ impl Manager {
         Item = impl Future<
             Output = (
                 String,
-                NaiveDateTime,
+                DateTime<Utc>,
                 Result<Vec<Event>, anyhow::Error>,
             ),
         > + '_,
@@ -99,7 +99,7 @@ impl Manager {
             .iter()
             .map(|(name, object)| async move {
                 let result = Self::fetch_task(object).await;
-                (name.to_string(), Utc::now().naive_local(), result)
+                (name.to_string(), Utc::now(), result)
             })
     }
 

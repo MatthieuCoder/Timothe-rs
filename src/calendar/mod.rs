@@ -1,24 +1,21 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
-use chrono::{Datelike, NaiveDateTime, Timelike, Utc};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use log::{debug, error, info};
-use poise::serenity_prelude::{Color, CreateEmbed, Http};
+use poise::serenity_prelude::{Color, CreateEmbed, CreateMessage, Http};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use crate::bot::Bot;
 
-pub mod schedule;
 pub mod manager;
+pub mod schedule;
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum UpdateResult {
     Created(Arc<Event>),
-    Updated {
-        old: Arc<Event>,
-        new: Arc<Event>,
-    },
+    Updated { old: Arc<Event>, new: Arc<Event> },
     Removed(Arc<Event>),
 }
 
@@ -29,9 +26,9 @@ pub struct Event {
     /// Summary of the event (Title)
     pub summary: String,
     /// Start of the event. (Utc aligned according to the iCalendar spec)
-    pub start: NaiveDateTime,
+    pub start: DateTime<Utc>,
     /// End of the event. (Utc aligned according to the iCalendar spec)
-    pub end: NaiveDateTime,
+    pub end: DateTime<Utc>,
     /// Where the event takes place.
     pub location: String,
     /// Description of the event.
@@ -44,68 +41,71 @@ impl From<&UpdateResult> for CreateEmbed {
     fn from(event: &UpdateResult) -> Self {
         let mut f = Self::default();
 
-        f.color(match event {
-            UpdateResult::Created(_) => Color::DARK_GREEN,
-            UpdateResult::Updated { .. } => Color::BLUE,
-            UpdateResult::Removed(_) => Color::RED,
-        })
-        .title(match &event {
-            UpdateResult::Created(event) | UpdateResult::Removed(event) => event.summary.clone(),
-            UpdateResult::Updated { old, new } => {
-                if old.summary == new.summary {
-                    new.summary.clone()
-                } else {
-                    format!("{} => {}", old.summary, new.summary)
+        f = f
+            .color(match event {
+                UpdateResult::Created(_) => Color::DARK_GREEN,
+                UpdateResult::Updated { .. } => Color::BLUE,
+                UpdateResult::Removed(_) => Color::RED,
+            })
+            .title(match &event {
+                UpdateResult::Created(event) | UpdateResult::Removed(event) => {
+                    event.summary.clone()
                 }
-            }
-        })
-        .description(match &event {
-            UpdateResult::Created(event) | UpdateResult::Removed(event) => format!(
-                "<t:{}> à <t:{}>\n`{}`",
-                event.start.timestamp(),
-                event.end.timestamp(),
-                event.description.replace("\\n", " ")
-            ),
-            UpdateResult::Updated { old, new } => {
-                format!(
-                    "{}\n{}",
-                    if old.start != new.start || old.end != new.end {
-                        format!(
-                            "Anciennement <t:{}> à <t:{}>, désormais <t:{}> à <t:{}>",
-                            old.start.timestamp(),
-                            old.end.timestamp(),
-                            new.start.timestamp(),
-                            new.end.timestamp()
-                        )
+                UpdateResult::Updated { old, new } => {
+                    if old.summary == new.summary {
+                        new.summary.clone()
                     } else {
-                        format!(
-                            "<t:{}> à <t:{}>",
-                            new.start.timestamp(),
-                            new.end.timestamp()
-                        )
-                    },
-                    if old.description == new.description {
-                        format!("`{}`", new.description.replace("\\n", ""))
-                    } else {
-                        format!(
-                            "`{}` => `{}`",
-                            old.description.replace("\\n", ""),
-                            new.description.replace("\\n", "")
-                        )
+                        format!("{} => {}", old.summary, new.summary)
                     }
-                )
-            }
-        });
+                }
+            })
+            .description(match &event {
+                UpdateResult::Created(event) | UpdateResult::Removed(event) => format!(
+                    "<t:{}> à <t:{}>\n`{}`",
+                    event.start.timestamp(),
+                    event.end.timestamp(),
+                    event.description.replace("\\n", " ")
+                ),
+                UpdateResult::Updated { old, new } => {
+                    format!(
+                        "{}\n{}",
+                        if old.start != new.start || old.end != new.end {
+                            format!(
+                                "Anciennement <t:{}> à <t:{}>, désormais <t:{}> à <t:{}>",
+                                old.start.timestamp(),
+                                old.end.timestamp(),
+                                new.start.timestamp(),
+                                new.end.timestamp()
+                            )
+                        } else {
+                            format!(
+                                "<t:{}> à <t:{}>",
+                                new.start.timestamp(),
+                                new.end.timestamp()
+                            )
+                        },
+                        if old.description == new.description {
+                            format!("`{}`", new.description.replace("\\n", ""))
+                        } else {
+                            format!(
+                                "`{}` => `{}`",
+                                old.description.replace("\\n", ""),
+                                new.description.replace("\\n", "")
+                            )
+                        }
+                    )
+                }
+            });
 
         match event {
             UpdateResult::Created(event) | UpdateResult::Removed(event) => {
                 if !event.location.is_empty() {
-                    f.field("Emplacement", &event.location, true);
+                    f = f.field("Emplacement", &event.location, true);
                 }
             }
             UpdateResult::Updated { old, new } => {
                 if !old.location.is_empty() || !new.location.is_empty() {
-                    f.field(
+                    f = f.field(
                         "Emplacement",
                         format!("`{}` => `{}`", old.location, new.location),
                         true,
@@ -152,17 +152,17 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
 
 impl From<&Event> for CreateEmbed {
     fn from(event: &Event) -> Self {
-        let mut f = Self::default();
-        let h = (f64::from(event.start.date().day() % 10) / 10f64) * 360f64;
+        let mut f = Self::new();
+        let h = (f64::from(event.start.date_naive().day() % 10) / 10f64) * 360f64;
         let l = f64::from(event.start.time().hour()) / 14f64;
 
         debug!("h: {}, l: {}", h, l);
-        
+
         #[allow(clippy::cast_sign_loss)]
         #[allow(clippy::cast_possible_truncation)]
         let color = hsl_to_rgb(h as u32, 0.75f64, 1f64 - l);
 
-        f.title(&event.summary).color(color).description(format!(
+        f = f.title(&event.summary).color(color).description(format!(
             "<t:{}> à <t:{}>\n`{}`",
             event.start.timestamp(),
             event.end.timestamp(),
@@ -170,13 +170,16 @@ impl From<&Event> for CreateEmbed {
         ));
 
         if !event.location.is_empty() {
-            f.field("Emplacement", &event.location, true);
+            f = f.field("Emplacement", &event.location, true);
         }
         f
     }
 }
-async fn process_events(bot: Arc<Bot>, updates_map: HashMap<String, Vec<UpdateResult>>, http: Arc<Http>) {
-    
+async fn process_events(
+    bot: Arc<Bot>,
+    updates_map: HashMap<String, Vec<UpdateResult>>,
+    http: Arc<Http>,
+) {
     for (calendar_name, updates) in updates_map {
         let calendar = bot
             .data
@@ -196,13 +199,12 @@ async fn process_events(bot: Arc<Bot>, updates_map: HashMap<String, Vec<UpdateRe
 
             for chunk in chunks {
                 let chunk = chunk.to_vec();
-                match channel
-                    .send_message(http.clone(), |f| {
-                        f.set_embeds(chunk);
-                        f
-                    })
-                    .await
-                {
+                let message = {
+                    let cm = CreateMessage::default();
+
+                    cm.add_embeds(chunk)
+                };
+                match channel.send_message(http.clone(), message).await {
                     Ok(_) => {
                         info!("sent message for updates!");
                     }
@@ -255,7 +257,7 @@ pub async fn manager_task(bot: Arc<Bot>, http: Arc<Http>) -> Result<(), anyhow::
         );
         tokio::select! {
             _ = wait => {
-                
+
                 let updates = bot.data.calendar_manager.write().await.update_calendars().await?;
                 debug!("got updates: {:#?}", updates);
                 process_events(bot.clone(), updates, http.clone()).await;
