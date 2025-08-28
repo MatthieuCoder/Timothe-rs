@@ -2,9 +2,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use bytes::Buf;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::Future;
-use log::{debug, error};
+use log::{debug, error, info};
 use regex::Regex;
 
 use crate::cfg::{CalendarItem, Config};
@@ -26,9 +26,7 @@ impl Manager {
 
     #[inline]
     async fn fetch_task(watch_item: &CalendarItem) -> Result<Vec<Event>, anyhow::Error> {
-        let response = reqwest::get(&watch_item.source)
-            .await?
-            .error_for_status()?;
+        let response = reqwest::get(&watch_item.source).await?.error_for_status()?;
 
         let data = response.bytes().await?.reader();
 
@@ -44,13 +42,13 @@ impl Manager {
                         match &property.name as &str {
                             "DTSTART" => {
                                 debug!("Parsing DTSTART: {}", value);
-                                cal_event.start =
-                                    DateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?.to_utc();
+                                let ndt = NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?;
+                                cal_event.start = ndt.and_utc();
                             }
                             "DTEND" => {
                                 debug!("Parsing DTEND: {}", value);
-                                cal_event.end =
-                                    DateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?.to_utc();
+                                let ndt = NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?;
+                                cal_event.end = ndt.and_utc();
                             }
                             "SUMMARY" => {
                                 cal_event.summary = value.trim().to_string();
@@ -59,9 +57,8 @@ impl Manager {
                                 cal_event.location = value.to_string();
                             }
                             "DESCRIPTION" => {
-                                let re =
-                                    Regex::new(r"\(.*\)")
-                                        .context("failed to build regex expression")?;
+                                let re = Regex::new(r"\(.*\)")
+                                    .context("failed to build regex expression")?;
 
                                 cal_event.description =
                                     re.replace_all(value, "").trim().to_string();
@@ -78,6 +75,8 @@ impl Manager {
             }
         }
 
+        info!("Fetched {} events from {}", events.len(), watch_item.source);
+
         Ok(events)
     }
 
@@ -85,13 +84,7 @@ impl Manager {
     fn tasks(
         config: &Config,
     ) -> impl Iterator<
-        Item = impl Future<
-            Output = (
-                String,
-                DateTime<Utc>,
-                Result<Vec<Event>, anyhow::Error>,
-            ),
-        > + '_,
+        Item = impl Future<Output = (String, DateTime<Utc>, Result<Vec<Event>, anyhow::Error>)> + '_,
     > {
         config
             .calendar
@@ -120,6 +113,7 @@ impl Manager {
         for (calendar_name, fetch_date, result) in data {
             match result {
                 Ok(cal) => {
+                    info!("updating calendar {} with {} events", calendar_name, cal.len());
                     calendars.insert(
                         calendar_name.clone(),
                         store
