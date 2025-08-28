@@ -3,6 +3,7 @@ version: '3'
 services:
     timothe:
         build: .
+        image: ghcr.io/matthieucoder/timothe-rs:main
         environment:
             - RUST_LOG=info
         volumes:
