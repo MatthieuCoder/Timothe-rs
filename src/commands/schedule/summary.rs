@@ -1,6 +1,7 @@
 use anyhow::Context;
 use chrono::{Duration, Utc};
 use futures::{Stream, StreamExt};
+use poise::serenity_prelude::CreateEmbed;
 use std::fmt::Write;
 
 use crate::bot::CommandContext;
@@ -85,7 +86,7 @@ pub async fn summary(
     let data = ctx.data();
     let member = &ctx.author_member().await;
 
-    let duration = Duration::days(2);
+    let duration = Duration::days(5);
     let from = Utc::now();
     let to = from + duration;
 
@@ -129,9 +130,31 @@ pub async fn summary(
             to.timestamp()
         ));
 
+        let mut embed = CreateEmbed::default();
+        embed
+            .title("Résumé des événements à venir")
+            .color(0x3498DB)
+            .description(format!(
+                "Voici les événements prévus du <t:{}> au <t:{}>:",
+                from.timestamp(),
+                to.timestamp()
+            ));
+
         for event in events {
-            f.embeds.push(event.as_ref().into());
+            let mut string = format!(
+                "<t:{}> à <t:{}> - **{}**\n`{}`\n\n",
+                event.start.and_utc().timestamp(),
+                event.end.and_utc().timestamp(),
+                event.summary,
+                event.description.replace("\\n", " ")
+            );
+            if !event.location.is_empty() {
+                string += format!("Emplacement: {}", &event.location).as_str();
+            }
+            embed.field(&event.summary, string, false);
         }
+
+        f.embeds.push(embed);
 
         f
     })

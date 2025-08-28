@@ -53,7 +53,7 @@ impl Manager {
                                     NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")?;
                             }
                             "SUMMARY" => {
-                                cal_event.summary = value.to_string();
+                                cal_event.summary = value.trim().to_string();
                             }
                             "LOCATION" => {
                                 cal_event.location = value.to_string();
