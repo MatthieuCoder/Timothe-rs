@@ -1,5 +1,5 @@
 FROM lukemathwalker/cargo-chef:latest AS chef
-WORKDIR app
+WORKDIR /app
 
 FROM chef AS planner
 COPY . .
@@ -11,8 +11,8 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release --bin timothe-rs
 
-FROM debian:buster-slim AS runtime
-WORKDIR app
+FROM debian:trixie-slim AS runtime
+WORKDIR /app
 RUN apt-get update && apt-get install -y openssl ca-certificates
 
 COPY --from=builder /app/target/release/timothe-rs /usr/local/bin
