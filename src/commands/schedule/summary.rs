@@ -1,7 +1,10 @@
 use anyhow::Context;
 use chrono::{Duration, Utc};
 use futures::{Stream, StreamExt};
-use poise::serenity_prelude::CreateEmbed;
+use poise::{
+    serenity_prelude::CreateEmbed,
+    CreateReply,
+};
 use std::fmt::Write;
 
 use crate::bot::CommandContext;
@@ -40,8 +43,8 @@ pub async fn groups(ctx: CommandContext<'_>) -> Result<(), anyhow::Error> {
     for (name, _) in user_calendars {
         write!(response, "\t**\\* {}**", name)?;
     }
-
-    ctx.send(|f| f.ephemeral(true).content(response)).await?;
+    let f = CreateReply::default().ephemeral(true).content(response);
+    ctx.send(f).await?;
     Ok(())
 }
 
@@ -109,7 +112,7 @@ pub async fn summary(
     let events = calendars
         .map(|(name, _)| {
             let calendar = reader.store.data.get(name)?;
-            let events = calendar.get_range(from.naive_utc(), duration);
+            let events = calendar.get_range(from, duration);
 
             Some(events)
         })
@@ -122,43 +125,38 @@ pub async fn summary(
             f
         })
         .context("Could't find any calendar matching.")?;
-
-    ctx.send(|f| {
-        f.ephemeral(true).content(format!(
-            "**Emploi du temps, de <t:{}> à <t:{}>:**\n\n",
+    let mut reply = CreateReply::default().ephemeral(true).content(format!(
+        "**Emploi du temps, de <t:{}> à <t:{}>:**\n\n",
+        from.timestamp(),
+        to.timestamp()
+    ));
+    let mut embed = CreateEmbed::default();
+    embed = embed
+        .title("Résumé des événements à venir")
+        .color(0x3498DB)
+        .description(format!(
+            "Voici les événements prévus du <t:{}> au <t:{}>:",
             from.timestamp(),
             to.timestamp()
         ));
 
-        let mut embed = CreateEmbed::default();
-        embed
-            .title("Résumé des événements à venir")
-            .color(0x3498DB)
-            .description(format!(
-                "Voici les événements prévus du <t:{}> au <t:{}>:",
-                from.timestamp(),
-                to.timestamp()
-            ));
-
-        for event in events {
-            let mut string = format!(
-                "<t:{}> à <t:{}> - **{}**\n`{}`\n\n",
-                event.start.and_utc().timestamp(),
-                event.end.and_utc().timestamp(),
-                event.summary,
-                event.description.replace("\\n", " ")
-            );
-            if !event.location.is_empty() {
-                string += format!("Emplacement: {}", &event.location).as_str();
-            }
-            embed.field(&event.summary, string, false);
+    for event in events {
+        let mut string = format!(
+            "<t:{}> à <t:{}> - **{}**\n`{}`\n\n",
+            event.start.timestamp(),
+            event.end.timestamp(),
+            event.summary,
+            event.description.replace("\\n", " ")
+        );
+        if !event.location.is_empty() {
+            string += format!("Emplacement: {}", &event.location).as_str();
         }
+        embed = embed.field(&event.summary, string, false);
+    }
 
-        f.embeds.push(embed);
+    reply.embeds.push(embed);
 
-        f
-    })
-    .await?;
+    ctx.send(reply).await?;
 
     Ok(())
 }
