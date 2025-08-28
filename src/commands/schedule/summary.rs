@@ -1,6 +1,7 @@
 use anyhow::Context;
 use chrono::{Duration, Utc};
 use futures::{Stream, StreamExt};
+use log::info;
 use poise::{
     serenity_prelude::CreateEmbed,
     CreateReply,
@@ -114,6 +115,8 @@ pub async fn summary(
             let calendar = reader.store.data.get(name)?;
             let events = calendar.get_range(from, duration);
 
+            info!("found {} events for {}", events.len(), name);
+
             Some(events)
         })
         .filter(std::option::Option::is_some)
@@ -125,6 +128,7 @@ pub async fn summary(
             f
         })
         .context("Could't find any calendar matching.")?;
+
     let mut reply = CreateReply::default().ephemeral(true).content(format!(
         "**Emploi du temps, de <t:{}> à <t:{}>:**\n\n",
         from.timestamp(),

@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use chrono::{DateTime, Duration, Utc};
-use log::debug;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
 use crate::cfg::{CalendarItem, Config};
@@ -84,8 +84,11 @@ impl Calendar {
         config: &CalendarItem,
     ) -> Result<Vec<UpdateResult>, anyhow::Error> {
         // use a tree of the indexed data for better handling
-        #[allow(clippy::from_iter_instead_of_collect)]
-        let tree_index = BTreeMap::from_iter(events.into_iter().map(|f| (f.start, Arc::new(f))));
+        let tree_index = BTreeMap::from_iter(events.into_iter().map(|f| {
+            info!("Indexing event at {}", f.start);
+            (f.start, Arc::new(f))
+        }));
+        info!("Updating calendar with {} events", tree_index.len());
 
         // compute the last event stored in the current calendar
         let existing_end = *self
@@ -98,6 +101,7 @@ impl Calendar {
 
         // for each event we want to add
         for new in tree_index.values() {
+            info!("1a: Processing event at {}", new.start);
             // if the event already exists, we want to update the event and emit an event
             if self.uid_index.contains_key(&new.uid) {
                 let existing = self
@@ -123,6 +127,8 @@ impl Calendar {
             } else {
                 // we want to create the event
 
+                info!("adding new event at {}", new.start);
+
                 let uid = new.uid.clone();
                 self.uid_index.insert(uid, new.clone());
                 self.tree.insert(new.start, new.clone());
@@ -130,6 +136,8 @@ impl Calendar {
                 // we should emit an update only if the event is added before the last event present at the start.
                 if new.start < existing_end {
                     updates.push(UpdateResult::Created(new.clone()));
+                } else {
+                    debug!("not emitting a created event for {} because it's after the last event present at the start ({})", new.start, existing_end);
                 }
             }
         }
@@ -148,6 +156,13 @@ impl Calendar {
             .range(fetch_time..end_slice)
             .map(|f| f.1.clone())
             .collect();
+
+        info!(
+            "Processing {} events [{} - {}]",
+            range.len(),
+            fetch_time,
+            end_slice
+        );
 
         // now we are going to check if there are deleted events in the stored range
         for event in range {
@@ -240,14 +255,14 @@ impl Store {
 // #[cfg(test)]
 // mod test {
 //     use std::sync::Arc;
-// 
+//
 //     use chrono::{DateTime, NaiveDateTime, Utc};
 //     use poise::serenity_prelude::{ChannelId, RoleId};
-// 
+//
 //     use crate::cfg::CalendarItem;
-// 
+//
 //     use super::{Calendar, Event, UpdateResult};
-// 
+//
 //     #[test]
 //     fn add_events() {
 //         // use a calendar with two weeks checks
@@ -258,7 +273,7 @@ impl Store {
 //             role: vec![RoleId::new(0)],
 //             time_amount: "2w".to_string(),
 //         };
-// 
+//
 //         let test_events = vec![
 //             Event {
 //                 summary: "test event1".to_string(),
@@ -277,7 +292,7 @@ impl Store {
 //                 uid: "002".to_string(),
 //             },
 //         ];
-// 
+//
 //         let updates = cal
 //             .update(
 //                 test_events.clone(),
@@ -285,26 +300,26 @@ impl Store {
 //                 &conf,
 //             )
 //             .unwrap();
-// 
+//
 //         let expected = vec![
 //             UpdateResult::Created(Arc::new(test_events[0].clone())),
 //             UpdateResult::Created(Arc::new(test_events[1].clone())),
 //         ];
-// 
+//
 //         assert_eq!(updates, expected);
 //     }
-// 
+//
 //     #[test]
 //     fn edit_events() {
 //         let mut cal: Calendar = Calendar::new();
-// 
+//
 //         let conf = CalendarItem {
 //             source: String::default(),
 //             channel: vec![ChannelId::new(0)],
 //             role: vec![RoleId::new(0)],
 //             time_amount: "2w".to_string(),
 //         };
-// 
+//
 //         let test_events = vec![
 //             Event {
 //                 summary: "test event1".to_string(),
@@ -323,7 +338,7 @@ impl Store {
 //                 uid: "002".to_string(),
 //             },
 //         ];
-// 
+//
 //         let inserts = cal
 //             .update(
 //                 test_events.clone(),
@@ -331,14 +346,14 @@ impl Store {
 //                 &conf,
 //             )
 //             .unwrap();
-// 
+//
 //         let expected = vec![
 //             UpdateResult::Created(Arc::new(test_events[0].clone())),
 //             UpdateResult::Created(Arc::new(test_events[1].clone())),
 //         ];
-// 
+//
 //         assert_eq!(inserts, expected);
-// 
+//
 //         let updates_data = vec![
 //             Event {
 //                 summary: "test event1".to_string(),
@@ -357,7 +372,7 @@ impl Store {
 //                 uid: "002".to_string(),
 //             },
 //         ];
-// 
+//
 //         let updates = cal
 //             .update(
 //                 updates_data.clone(),
@@ -365,7 +380,7 @@ impl Store {
 //                 &conf,
 //             )
 //             .unwrap();
-// 
+//
 //         let expected = vec![
 //             UpdateResult::Updated {
 //                 old: Arc::new(test_events[0].clone()),
@@ -376,21 +391,21 @@ impl Store {
 //                 new: Arc::new(updates_data[1].clone()),
 //             },
 //         ];
-// 
+//
 //         assert_eq!(updates, expected);
 //     }
-// 
+//
 //     #[test]
 //     fn remove_test() {
 //         let mut cal: Calendar = Calendar::new();
-// 
+//
 //         let conf = CalendarItem {
 //             source: String::default(),
 //             channel: vec![ChannelId::new(0)],
 //             role: vec![RoleId::new(0)],
 //             time_amount: "2w".to_string(),
 //         };
-// 
+//
 //         let test_events = vec![
 //             Event {
 //                 summary: "test event1".to_string(),
@@ -417,16 +432,16 @@ impl Store {
 //                 uid: "003".to_string(),
 //             },
 //         ];
-// 
+//
 //         cal.update(
 //             test_events.clone(),
 //             NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
 //             &conf,
 //         )
 //         .unwrap();
-// 
+//
 //         let updates_data = vec![];
-// 
+//
 //         let updates = cal
 //             .update(
 //                 updates_data,
@@ -434,20 +449,20 @@ impl Store {
 //                 &conf,
 //             )
 //             .unwrap();
-// 
+//
 //         let expected = vec![
 //             UpdateResult::Removed(Arc::new(test_events[0].clone())),
 //             UpdateResult::Removed(Arc::new(test_events[1].clone())),
 //             UpdateResult::Removed(Arc::new(test_events[2].clone())),
 //         ];
-// 
+//
 //         assert_eq!(updates, expected);
 //     }
-// 
+//
 //     #[test]
 //     fn remove_test_2() {
 //         let mut cal: Calendar = Calendar::new();
-// 
+//
 //         let conf = CalendarItem {
 //             source: String::default(),
 //             channel: vec![ChannelId::new(0)],
@@ -480,14 +495,14 @@ impl Store {
 //                 uid: "003".to_string(),
 //             },
 //         ];
-// 
+//
 //         cal.update(
 //             test_events.clone(),
 //             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
 //             &conf,
 //         )
 //         .unwrap();
-// 
+//
 //         let updates_data = vec![
 //             Event {
 //                 summary: "test event1".to_string(),
@@ -506,7 +521,7 @@ impl Store {
 //                 uid: "003".to_string(),
 //             },
 //         ];
-// 
+//
 //         let updates = cal
 //             .update(
 //                 updates_data,
@@ -514,10 +529,10 @@ impl Store {
 //                 &conf,
 //             )
 //             .unwrap();
-// 
+//
 //         let expected = vec![UpdateResult::Removed(Arc::new(test_events[1].clone()))];
-// 
+//
 //         assert_eq!(updates, expected);
 //     }
 // }
-// 
+//
