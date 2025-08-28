@@ -1,12 +1,11 @@
 use crate::calendar::manager_task;
 use crate::{calendar::manager::Manager, cfg::Config, commands};
-use anyhow::anyhow;
 use anyhow::Context;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::error;
-use poise::serenity_prelude::{self as serenity};
-use poise::Framework;
+use poise::serenity_prelude::{ClientBuilder, GatewayIntents};
+use poise::CreateReply;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
@@ -26,7 +25,6 @@ pub struct Data {
 pub struct Bot {
     pub data: Arc<Data>,
     pub shutdown: Receiver<()>,
-    pub framework: Arc<Framework<Arc<Data>, anyhow::Error>>,
     shutdown_send: Sender<()>,
 }
 
@@ -53,11 +51,11 @@ async fn wait_for_stop_signal(bot: Arc<Bot>) -> Result<(), anyhow::Error> {
 async fn on_error(error: poise::FrameworkError<'_, Arc<Data>, anyhow::Error>) {
     match error {
         poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
-        poise::FrameworkError::Command { error, ctx } => {
-            std::mem::drop(
-                ctx.send(|f| f.ephemeral(true).content(format!("{:?}", error)))
-                    .await,
-            );
+        poise::FrameworkError::Command { error, ctx, .. } => {
+            let f = CreateReply::default()
+                .ephemeral(true)
+                .content(format!("{:?}", error));
+            std::mem::drop(ctx.send(f).await);
             error!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
         error => {
@@ -77,74 +75,82 @@ impl Bot {
         // initialize the calenar manager
         let calendar_manager = Arc::new(RwLock::new(Manager::new(config.clone())?));
 
-        let options = poise::FrameworkOptions {
-            commands: vec![
-                commands::register(),
-                commands::help(),
-                commands::schedule::summary::root(),
-            ],
-            prefix_options: poise::PrefixFrameworkOptions {
-                prefix: None,
-                edit_tracker: Some(poise::EditTracker::for_timespan(Duration::from_secs(3600))),
-                mention_as_prefix: true,
-                ..Default::default()
-            },
-            on_error: |error| Box::pin(on_error(error)),
-            ..Default::default()
-        };
-
         let data = Arc::new(Data {
             config: config.clone(),
             calendar_manager,
         });
 
-        let new_data_ref = data.clone();
-        let framework = poise::Framework::builder()
-            .token(config.discord.token.clone())
-            .user_data_setup(move |_ctx, _, _| Box::pin(async move { Ok(new_data_ref.clone()) }))
-            .options(options)
-            .intents(serenity::GatewayIntents::non_privileged())
-            .build()
-            .await
-            .context("failed to create framework")?;
-
         Ok(Arc::new(Self {
             data,
             shutdown,
-            framework,
             shutdown_send,
         }))
     }
     pub async fn start(self: Arc<Self>) -> Result<(), anyhow::Error> {
         let mut shutdown = self.shutdown.resubscribe();
         let mut tasks = FuturesUnordered::new();
-        let http = self.framework.client().cache_and_http.http.clone();
 
-        let this = self.clone();
-        // runs the discord bot usign autosharded mode
+        let options = poise::FrameworkOptions {
+            commands: vec![commands::help(), commands::schedule::summary::root()],
+            prefix_options: poise::PrefixFrameworkOptions {
+                prefix: None,
+                edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
+                    Duration::from_secs(3600),
+                ))),
+                mention_as_prefix: true,
+                ..Default::default()
+            },
+            on_error: |error| Box::pin(on_error(error)),
+            ..Default::default()
+        };
+        let data = self.data.clone();
+        let framework = poise::Framework::builder()
+            .options(options)
+            .setup(move |ctx, _ready, framework| {
+                Box::pin(async move {
+                    poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                    Ok(data)
+                })
+            })
+            .build();
+        let client = ClientBuilder::new(
+            self.data.config.discord.token.clone(),
+            GatewayIntents::non_privileged(),
+        )
+        .framework(framework);
+
+        let mut client = client.await.unwrap();
+        let http = client.http.clone();
+
         tasks.push(tokio::spawn(async move {
-            let task = this.framework.clone().start_autosharded();
-
             // wait until the bot terminates or a shutdown signal is received.
             tokio::select! {
-                result = task => { match result { Ok(result) => Ok(result), Err(error) => Err(anyhow!(error)) } },
+                result = client.start_autosharded() => {
+                    if let Err(err) = result {
+                        error!("Client error: {}", err);
+                    }
+                },
                 _ = shutdown.recv() => {
                     // shutdown the bot properly
-                    this.framework.shard_manager().lock().await.shutdown_all().await;
-                    Ok(())
+                    client.shard_manager.shutdown_all().await;
                 }
-            }
+            };
         }));
-
-        tasks.push(tokio::spawn(manager_task(self.clone(), http)));
-        tasks.push(tokio::spawn(wait_for_stop_signal(self.clone())));
+        let self_clone = self.clone();
+        tasks.push(tokio::spawn(async {
+            let _ = manager_task(self_clone, http).await;
+        }));
+        let self_clone = self.clone();
+        tasks.push(tokio::spawn(async {
+            let _ = wait_for_stop_signal(self_clone).await;
+        }));
 
         // wait for a task to finish.
         let task = tasks
             .next()
             .await
             .context("no tasks started, illegal state")?
-            .context("failed to join task")?;
+            .context("failed to join task");
 
         // when a task is finished, we must terminate all the others,
         // hence we send a signal talling all tasks to stop processing
@@ -152,12 +158,9 @@ impl Bot {
         self.shutdown_send.send(())?;
 
         while let Some(operation) = tasks.next().await {
-            let operation = operation.context("failed to join task")?;
-            // return immediately if any task shut down unexpectedly
-            operation?;
+            operation.context("failed to join task")?;
         }
-
-        // return an error if the first task failed
+        
         task?;
         Ok(())
     }
