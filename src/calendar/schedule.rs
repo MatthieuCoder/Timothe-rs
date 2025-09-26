@@ -239,7 +239,7 @@ impl Store {
             .calendar
             .calendars
             .get(calendar)
-            .context("unknown calendar: unreacheable")?
+            .context("unknown calendar: unreachable")?
             .clone();
         // Returned updates values
         let value = cal.update(events, fetch_time, &config)?;

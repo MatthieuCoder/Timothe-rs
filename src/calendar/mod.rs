@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::Context;
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use log::{debug, error, info};
-use poise::serenity_prelude::{Color, CreateEmbed, CreateMessage, Http};
+use poise::serenity_prelude::{Color, CreateEmbed, CreateEmbedFooter, CreateMessage, Http};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
@@ -39,18 +39,23 @@ pub struct Event {
 
 impl From<&UpdateResult> for CreateEmbed {
     fn from(event: &UpdateResult) -> Self {
-        let mut f = Self::default();
-
-        f = f
+        let mut f = Self::default()
             .color(match event {
                 UpdateResult::Created(_) => Color::DARK_GREEN,
                 UpdateResult::Updated { .. } => Color::BLUE,
                 UpdateResult::Removed(_) => Color::RED,
             })
+            .footer(CreateEmbedFooter::new(match event {
+                UpdateResult::Created(_) => "Évènement ajouté",
+                UpdateResult::Updated { .. } => "Évènement mis à jour",
+                UpdateResult::Removed(_) => "Évènement supprimé",
+            }))
             .title(match &event {
                 UpdateResult::Created(event) | UpdateResult::Removed(event) => {
                     event.summary.clone()
                 }
+
+                // En cas de changement
                 UpdateResult::Updated { old, new } => {
                     if old.summary == new.summary {
                         new.summary.clone()
@@ -71,7 +76,8 @@ impl From<&UpdateResult> for CreateEmbed {
                         "{}\n{}",
                         if old.start != new.start || old.end != new.end {
                             format!(
-                                "Anciennement <t:{}> à <t:{}>, désormais <t:{}> à <t:{}>",
+                                "Anciennement de <t:{}> à <t:{}> \n
+                                 désormais    de <t:{}> à <t:{}>",
                                 old.start.timestamp(),
                                 old.end.timestamp(),
                                 new.start.timestamp(),
@@ -79,40 +85,36 @@ impl From<&UpdateResult> for CreateEmbed {
                             )
                         } else {
                             format!(
-                                "<t:{}> à <t:{}>",
+                                "De <t:{}> à <t:{}>",
                                 new.start.timestamp(),
                                 new.end.timestamp()
                             )
                         },
-                        if old.description == new.description {
-                            format!("`{}`", new.description.replace("\\n", ""))
-                        } else {
-                            format!(
-                                "`{}` => `{}`",
-                                old.description.replace("\\n", ""),
-                                new.description.replace("\\n", "")
-                            )
-                        }
+                        format!("```{}```", new.description)
                     )
                 }
             });
 
-        match event {
+        f = match event {
             UpdateResult::Created(event) | UpdateResult::Removed(event) => {
                 if !event.location.is_empty() {
-                    f = f.field("Emplacement", &event.location, true);
+                    f.field("Emplacement", &event.location, true)
+                } else {
+                    f
                 }
             }
             UpdateResult::Updated { old, new } => {
                 if !old.location.is_empty() || !new.location.is_empty() {
-                    f = f.field(
+                    f.field(
                         "Emplacement",
-                        format!("`{}` => `{}`", old.location, new.location),
+                        format!("A été déplacé vers`{}`", new.location),
                         true,
-                    );
+                    )
+                } else {
+                    f
                 }
             }
-        }
+        };
 
         f
     }
@@ -257,7 +259,6 @@ pub async fn manager_task(bot: Arc<Bot>, http: Arc<Http>) -> Result<(), anyhow::
         );
         tokio::select! {
             _ = wait => {
-
                 let updates = bot.data.calendar_manager.write().await.update_calendars().await?;
                 debug!("got updates: {:#?}", updates);
                 process_events(bot.clone(), updates, http.clone()).await;

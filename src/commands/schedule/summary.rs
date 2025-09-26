@@ -2,10 +2,7 @@ use anyhow::Context;
 use chrono::{Duration, Utc};
 use futures::{Stream, StreamExt};
 use log::info;
-use poise::{
-    serenity_prelude::CreateEmbed,
-    CreateReply,
-};
+use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use std::fmt::Write;
 
 use crate::bot::CommandContext;
@@ -129,17 +126,12 @@ pub async fn summary(
         })
         .context("Could't find any calendar matching.")?;
 
-    let mut reply = CreateReply::default().ephemeral(true).content(format!(
-        "**Emploi du temps, de <t:{}> à <t:{}>:**\n\n",
-        from.timestamp(),
-        to.timestamp()
-    ));
-    let mut embed = CreateEmbed::default();
-    embed = embed
+    let mut reply = CreateReply::default().ephemeral(true);
+    let mut embed = CreateEmbed::default()
         .title("Résumé des événements à venir")
         .color(0x3498DB)
         .description(format!(
-            "Voici les événements prévus du <t:{}> au <t:{}>:",
+            "Voici les cours du <t:{}> au <t:{}>:",
             from.timestamp(),
             to.timestamp()
         ));
@@ -150,7 +142,7 @@ pub async fn summary(
             event.start.timestamp(),
             event.end.timestamp(),
             event.summary,
-            event.description.replace("\\n", " ")
+            event.description.replace("\\n", " ").trim()
         );
         if !event.location.is_empty() {
             string += format!("Emplacement: {}", &event.location).as_str();
