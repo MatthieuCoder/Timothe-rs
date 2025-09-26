@@ -107,7 +107,7 @@ pub async fn summary(
 
     let reader = data.calendar_manager.read().await;
 
-    let events = calendars
+    let mut events = calendars
         .map(|(name, _)| {
             let calendar = reader.store.data.get(name)?;
             let events = calendar.get_range(from, duration);
@@ -136,7 +136,7 @@ pub async fn summary(
             to.timestamp()
         ));
 
-    for event in events {
+    for event in &mut events[0..5] {
         let mut string = format!(
             "<t:{}> à <t:{}> - **{}**\n```{}```\n\n",
             event.start.timestamp(),
