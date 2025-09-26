@@ -192,11 +192,7 @@ async fn process_events(
             .unwrap();
 
         for channel in &calendar.channel {
-            let mut embeds: Vec<CreateEmbed> = vec![];
-            for update in &updates {
-                embeds.push(update.into());
-            }
-
+            let embeds: Vec<CreateEmbed> = updates.iter().map(Into::into).collect();
             let chunks = embeds.chunks(10);
 
             for chunk in chunks {

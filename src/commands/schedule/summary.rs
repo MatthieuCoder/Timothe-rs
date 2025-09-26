@@ -138,14 +138,14 @@ pub async fn summary(
 
     for event in events {
         let mut string = format!(
-            "<t:{}> à <t:{}> - **{}**\n`{}`\n\n",
+            "<t:{}> à <t:{}> - **{}**\n```{}```\n\n",
             event.start.timestamp(),
             event.end.timestamp(),
             event.summary,
             event.description.replace("\\n", " ").trim()
         );
         if !event.location.is_empty() {
-            string += format!("Emplacement: {}", &event.location).as_str();
+            string += format!("`{}`", &event.location).as_str();
         }
         embed = embed.field(&event.summary, string, false);
     }
