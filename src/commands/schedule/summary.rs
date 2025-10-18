@@ -107,7 +107,7 @@ pub async fn summary(
 
     let reader = data.calendar_manager.read().await;
 
-    let mut events = calendars
+    let events = calendars
         .map(|(name, _)| {
             let calendar = reader.store.data.get(name)?;
             let events = calendar.get_range(from, duration);
@@ -136,18 +136,23 @@ pub async fn summary(
             to.timestamp()
         ));
 
-    for event in &mut events[0..5] {
-        let mut string = format!(
-            "<t:{}> à <t:{}> - **{}**\n```{}```\n\n",
-            event.start.timestamp(),
-            event.end.timestamp(),
-            event.summary,
-            event.description.replace("\\n", " ").trim()
-        );
-        if !event.location.is_empty() {
-            string += format!("`{}`", &event.location).as_str();
+    let mut events_iter = events.iter();
+    for _ in 0..5 {
+        if let Some(event) = events_iter.next() {
+            let mut string = format!(
+                "<t:{}> à <t:{}> - **{}**\n```{}```\n\n",
+                event.start.timestamp(),
+                event.end.timestamp(),
+                event.summary,
+                event.description.replace("\\n", " ").trim()
+            );
+            if !event.location.is_empty() {
+                string += format!("`{}`", &event.location).as_str();
+            }
+            embed = embed.field(&event.summary, string, false);
+        } else {
+            break;
         }
-        embed = embed.field(&event.summary, string, false);
     }
 
     reply.embeds.push(embed);
