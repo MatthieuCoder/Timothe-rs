@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
 use log::{debug, error, info};
 use poise::serenity_prelude::{Color, CreateEmbed, CreateEmbedFooter, CreateMessage, Http};
 use serde::{Deserialize, Serialize};
@@ -76,8 +76,7 @@ impl From<&UpdateResult> for CreateEmbed {
                         "{}\n{}",
                         if old.start != new.start || old.end != new.end {
                             format!(
-                                "Anciennement de <t:{}> à <t:{}> \n
-                                 désormais    de <t:{}> à <t:{}>",
+                                "Anciennement de <t:{}> à <t:{}> désormais de <t:{}> à <t:{}>",
                                 old.start.timestamp(),
                                 old.end.timestamp(),
                                 new.start.timestamp(),
@@ -90,7 +89,7 @@ impl From<&UpdateResult> for CreateEmbed {
                                 new.end.timestamp()
                             )
                         },
-                        format!("```{}```", new.description)
+                        format!("```{}```", new.description.replace("\\n", "\n"))
                     )
                 }
             });
@@ -107,7 +106,7 @@ impl From<&UpdateResult> for CreateEmbed {
                 if !old.location.is_empty() || !new.location.is_empty() {
                     f.field(
                         "Emplacement",
-                        format!("A été déplacé vers`{}`", new.location),
+                        format!("A été déplacé vers `{}`", new.location),
                         true,
                     )
                 } else {
@@ -152,6 +151,14 @@ fn hsl_to_rgb(h: u32, s: f64, l: f64) -> Color {
     )
 }
 
+fn is_less_then_seven_days_away(update: &&UpdateResult) -> bool {
+    match update {
+        UpdateResult::Created(event) => (Utc::now() - event.start) < TimeDelta::days(7),
+        UpdateResult::Updated { new, .. } => (Utc::now() - new.start) < TimeDelta::days(7),
+        UpdateResult::Removed(event) => (Utc::now() - event.start) < TimeDelta::days(7),
+    }
+}
+
 impl From<&Event> for CreateEmbed {
     fn from(event: &Event) -> Self {
         let mut f = Self::new();
@@ -192,7 +199,11 @@ async fn process_events(
             .unwrap();
 
         for channel in &calendar.channel {
-            let embeds: Vec<CreateEmbed> = updates.iter().map(Into::into).collect();
+            let embeds: Vec<CreateEmbed> = updates
+                .iter()
+                .filter(is_less_then_seven_days_away)
+                .map(Into::into)
+                .collect();
             let chunks = embeds.chunks(10);
 
             for chunk in chunks {

@@ -96,6 +96,7 @@ impl Manager {
             })
     }
 
+
     #[allow(unused)]
     pub async fn update_calendars(
         &mut self,
@@ -113,7 +114,11 @@ impl Manager {
         for (calendar_name, fetch_date, result) in data {
             match result {
                 Ok(cal) => {
-                    info!("updating calendar {} with {} events", calendar_name, cal.len());
+                    info!(
+                        "updating calendar {} with {} events",
+                        calendar_name,
+                        cal.len()
+                    );
                     calendars.insert(
                         calendar_name.clone(),
                         store
