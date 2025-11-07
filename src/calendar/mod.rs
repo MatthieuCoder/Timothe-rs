@@ -103,7 +103,7 @@ impl From<&UpdateResult> for CreateEmbed {
                 }
             }
             UpdateResult::Updated { old, new } => {
-                if !old.location.is_empty() || !new.location.is_empty() {
+                if old != new {
                     f.field(
                         "Emplacement",
                         format!("A été déplacé vers `{}`", new.location),
